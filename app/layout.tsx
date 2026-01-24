@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import { Inter, Libre_Baskerville, Courier_Prime, Caveat } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/Navbar";
+// REMOVE or Comment out the import if you want, but removing the component below is enough
+// import Navbar from "@/components/Navbar"; 
 
-// 1. Standard Sans
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
-// 2. Quill Font (Serif)
 const baskerville = Libre_Baskerville({ 
   weight: ["400", "700"], 
   subsets: ["latin"], 
@@ -14,14 +13,12 @@ const baskerville = Libre_Baskerville({
   variable: "--font-serif" 
 });
 
-// 3. Typewriter Font (Mono)
 const courier = Courier_Prime({
   weight: ["400", "700"],
   subsets: ["latin"],
   variable: "--font-typewriter"
 });
 
-// 4. Note Font (Handwriting)
 const caveat = Caveat({
   subsets: ["latin"],
   variable: "--font-handwriting"
@@ -40,7 +37,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${baskerville.variable} ${courier.variable} ${caveat.variable} antialiased`}>
-        <Navbar />
+        {/* <Navbar />  <-- DELETE OR COMMENT THIS LINE */}
         {children}
       </body>
     </html>
