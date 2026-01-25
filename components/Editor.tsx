@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
+// 📦 IMPORT THE LIBRARY
+import getCaretCoordinates from 'textarea-caret';
 
 // ------------------------------------------------------------------
 // 🔧 DYNAMIC THEME CONFIGURATION
@@ -22,12 +24,13 @@ const THEMES = [
     placeholder: "Dip your quill...",
     sound: '/sounds/scratch.mp3',
     
-    // 🖼️ QUILL IMAGE (Side Column)
     imageConfig: {
       src: '/quill.png',
-      // Mobile: Top Right (absolute). Desktop: Simple static image.
-      className: "w-20 rotate-12 drop-shadow-xl pointer-events-none md:static absolute right-2 top-2 md:w-24 md:mt-4",
-      type: 'side'
+      // CALIBRATION: Positive Y moves DOWN, Negative Y moves UP
+      tipOffset: { x: -150, y: -500 }, 
+      // SIZE: Reduced to w-20 (mobile) / w-24 (desktop)
+      className: "w-20 md:w-24 rotate-12 drop-shadow-xl pointer-events-none transition-transform duration-75 ease-out",
+      type: 'cursor' 
     }
   },
   {
@@ -50,12 +53,13 @@ const THEMES = [
     placeholder: "Jot something down...",
     sound: '/sounds/scribble.mp3',
 
-    // 🖼️ PENCIL IMAGE (Side Column)
     imageConfig: {
       src: '/pencil.png',
-      // Mobile: Top Right. Desktop: Simple static image.
-      className: "w-12 -rotate-6 drop-shadow-lg pointer-events-none md:static absolute right-4 top-4 md:w-16 md:mt-8",
-      type: 'side'
+      // CALIBRATION: Pencil usually needs less offset than quill
+      tipOffset: { x: -100, y: -40 },
+      // SIZE: Reduced to w-12 (mobile) / w-16 (desktop)
+      className: "w-12 md:w-16 -rotate-6 drop-shadow-lg pointer-events-none transition-transform duration-75 ease-out",
+      type: 'cursor'
     }
   },
   {
@@ -73,10 +77,9 @@ const THEMES = [
     hasTypewriterEffect: true,
     sound: '/sounds/type.mp3',
 
-    // 🖼️ TYPEWRITER IMAGE (Fixed Bottom - Smaller)
+    // 🖼️ TYPEWRITER IMAGE (Fixed Bottom)
     imageConfig: {
       src: '/typewriter.png',
-      // Reduced max-width to 500px so it's not huge
       className: "fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[500px] z-30 pointer-events-none drop-shadow-2xl",
       type: 'screen' 
     }
@@ -106,12 +109,26 @@ export default function Editor() {
   const [usedWords, setUsedWords] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // ⚡ REFS for Direct DOM Manipulation (Zero Lag)
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const cursorImageRef = useRef<HTMLImageElement>(null);
   const dingRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     document.body.style.backgroundColor = currentTheme.bgHex;
+  }, [currentTheme]);
+
+  // ✅ NEW: Trigger cursor position immediately on load (wait for fonts)
+  useEffect(() => {
+    if (document.fonts) {
+      document.fonts.ready.then(() => {
+        updateCursorPosition();
+      });
+    } else {
+      // Fallback for browsers that don't support document.fonts
+      setTimeout(updateCursorPosition, 100);
+    }
   }, [currentTheme]);
 
   useEffect(() => {
@@ -133,9 +150,37 @@ export default function Editor() {
     setUsedWords(found);
   }, [poem, dailyWords]);
 
-  const allWordsUsed = dailyWords.length > 0 && usedWords.length === dailyWords.length;
+  // 📍 CURSOR TRACKING ENGINE
+  const updateCursorPosition = () => {
+    if (!textareaRef.current || !cursorImageRef.current || currentTheme.imageConfig?.type !== 'cursor') return;
+
+    const textarea = textareaRef.current;
+    const image = cursorImageRef.current;
+    const config = currentTheme.imageConfig;
+
+    // 1. Get exact pixel coordinates
+    const coordinates = getCaretCoordinates(textarea, textarea.selectionEnd);
+
+    // 2. Adjust for scrolling
+    const scrollTop = textarea.scrollTop;
+
+    // 3. Calculate final position
+    const top = coordinates.top - scrollTop + (config.tipOffset?.y || 0);
+    const left = coordinates.left + (config.tipOffset?.x || 0);
+
+    // 4. Move Image
+    image.style.transform = `translate(${left}px, ${top}px)`;
+    image.style.opacity = '1'; // Make visible immediately
+  };
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setPoem(e.target.value);
+    requestAnimationFrame(updateCursorPosition);
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    requestAnimationFrame(updateCursorPosition);
+
     if (!currentTheme.sound && !currentTheme.hasTypewriterEffect) return;
 
     if (currentTheme.hasTypewriterEffect && e.key === 'Enter') {
@@ -153,6 +198,8 @@ export default function Editor() {
       sound.play().catch(() => {});
     }
   };
+
+  const allWordsUsed = dailyWords.length > 0 && usedWords.length === dailyWords.length;
 
   const handleSnap = async () => {
     if (!allWordsUsed) return;
@@ -179,7 +226,6 @@ export default function Editor() {
     return `${currentTheme.controlsClass} opacity-100`;
   };
 
-  // ✅ FIXED SUBMITTED SCREEN
   if (hasSubmitted) {
     return (
       <div 
@@ -187,11 +233,7 @@ export default function Editor() {
         style={{ backgroundColor: currentTheme.bgHex }}
       >
         <div className={`text-center space-y-6 p-12 rounded-xl shadow-2xl max-w-md w-full mx-4 ${currentTheme.isTerminal ? 'border-2 border-green-500 bg-black' : 'bg-white'}`}>
-          <h2 
-              className={`text-4xl font-bold ${currentTheme.fontClass}`}
-              // Use inkHex for card text so it matches the theme's "ink" color (Green for Terminal, Black/Blue for others)
-              style={{ color: currentTheme.inkHex }}
-          >
+          <h2 className={`text-4xl font-bold ${currentTheme.fontClass}`} style={{ color: currentTheme.inkHex }}>
               Preserved. 🫰
           </h2>
           <Link 
@@ -263,33 +305,38 @@ export default function Editor() {
 
       {/* EDITOR WORKSPACE */}
       <main className="flex-1 overflow-y-auto relative w-full flex justify-center perspective-1000 pb-20 px-4">
-        
-        {/* LAYOUT CONTAINER: Side-by-Side Flex on Desktop */}
-        <div className="w-full max-w-5xl flex flex-col md:flex-row items-start justify-center gap-6 relative">
-
-            {/* 1. THE PAPER (Takes flex-1) */}
+        <div className="w-full max-w-5xl flex justify-center items-start min-h-full">
+            
+            {/* PAPER CONTAINER */}
             <div 
               className={`relative w-full flex-1 mx-auto transition-all duration-500 flex flex-col ${currentTheme.paperClass}`}
               style={currentTheme.paperStyle}
             >
-              {/* MOBILE IMAGE: Shows inside top-right only on small screens */}
-              {currentTheme.imageConfig && currentTheme.imageConfig.type === 'side' && (
-                 <img 
-                    src={currentTheme.imageConfig.src}
-                    className={`md:hidden ${currentTheme.imageConfig.className}`} 
-                    alt="Prop"
-                 />
-              )}
-
+              
               <textarea
+                ref={textareaRef}
                 className={`w-full flex-1 bg-transparent border-none outline-none resize-none p-10 md:p-16 ${currentTheme.fontClass} placeholder-opacity-40`}
                 style={{ color: currentTheme.inkHex, caretColor: currentTheme.inkHex }}
                 placeholder={currentTheme.placeholder}
                 value={poem}
-                onChange={(e) => setPoem(e.target.value)}
+                onChange={handleInput} 
                 onKeyDown={handleKeyDown}
+                onClick={updateCursorPosition} // Update on click
+                onScroll={updateCursorPosition} // Update on scroll
                 spellCheck={false}
               />
+
+              {/* ✍️ FOLLOWER IMAGE (Quill/Pencil) */}
+              {currentTheme.imageConfig && currentTheme.imageConfig.type === 'cursor' && (
+                  <img 
+                    ref={cursorImageRef}
+                    src={currentTheme.imageConfig.src}
+                    // 'opacity: 0' initially, but the useEffect will set it to 1 immediately
+                    className={`absolute left-0 top-0 z-50 will-change-transform ${currentTheme.imageConfig.className}`}
+                    alt="Writing Tool"
+                    style={{ opacity: 0 }} 
+                  />
+              )}
 
               <div className="p-10 md:p-16 pt-0 flex flex-col gap-6 mt-auto">
                 <input 
@@ -310,17 +357,6 @@ export default function Editor() {
               </div>
             </div>
 
-            {/* 2. THE SIDE PROP (Desktop Only) */}
-            {/* Sits in a dedicated column to the right, impossible to overlap paper */}
-            {currentTheme.imageConfig && currentTheme.imageConfig.type === 'side' && (
-              <div className="hidden md:block flex-none w-24 sticky top-10">
-                  <img 
-                    src={currentTheme.imageConfig.src}
-                    className={`${currentTheme.imageConfig.className}`}
-                    alt="Theme Prop"
-                  />
-              </div>
-            )}
         </div>
       </main>
 
