@@ -3,11 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
-// 📦 IMPORT THE LIBRARY
 import getCaretCoordinates from 'textarea-caret';
 
 // ------------------------------------------------------------------
-// 🔧 DYNAMIC THEME CONFIGURATION
+// 🔧 THEME CONFIGURATION
 // ------------------------------------------------------------------
 const THEMES = [
   {
@@ -22,14 +21,17 @@ const THEMES = [
     fontClass: "font-serif text-2xl leading-loose",
     inkHex: "#3e2723", 
     placeholder: "Dip your quill...",
-    sound: '/sounds/scratch.mp3',
+    
+    // 🎵 AUDIO
+    sound: '/sounds/quillsound.mp3',
+    isContinuousSound: true, 
+    restartOnNewline: true, 
+    volumeBoost: 1.0,
     
     imageConfig: {
       src: '/quill.png',
-      // CALIBRATION: Positive Y moves DOWN, Negative Y moves UP
-      tipOffset: { x: -150, y: -500 }, 
-      // SIZE: Reduced to w-20 (mobile) / w-24 (desktop)
-      className: "w-20 md:w-24 rotate-12 drop-shadow-xl pointer-events-none transition-transform duration-75 ease-out",
+      tipOffset: { x: 0, y: -80 }, 
+      className: "w-20 md:w-24 rotate-12 drop-shadow-xl pointer-events-none transition-transform ease-out",
       type: 'cursor' 
     }
   },
@@ -51,14 +53,15 @@ const THEMES = [
     fontClass: "font-handwriting text-3xl leading-[3rem]", 
     inkHex: "#1e3a8a", 
     placeholder: "Jot something down...",
-    sound: '/sounds/scribble.mp3',
+    sound: '/sounds/pencilsound.mp3',
+    isContinuousSound: true, 
+    restartOnNewline: true, 
+    volumeBoost: 1.0, 
 
     imageConfig: {
       src: '/pencil.png',
-      // CALIBRATION: Pencil usually needs less offset than quill
-      tipOffset: { x: -100, y: -40 },
-      // SIZE: Reduced to w-12 (mobile) / w-16 (desktop)
-      className: "w-12 md:w-16 -rotate-6 drop-shadow-lg pointer-events-none transition-transform duration-75 ease-out",
+      tipOffset: { x: 0, y: -40 },
+      className: "w-12 md:w-16 -rotate-6 drop-shadow-lg pointer-events-none transition-transform ease-out",
       type: 'cursor'
     }
   },
@@ -76,11 +79,11 @@ const THEMES = [
     placeholder: 'Start typing...',
     hasTypewriterEffect: true,
     sound: '/sounds/type.mp3',
-
-    // 🖼️ TYPEWRITER IMAGE (Fixed Bottom)
+    volumeBoost: 1.0,
+    
     imageConfig: {
       src: '/typewriter.png',
-      className: "fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[500px] z-30 pointer-events-none drop-shadow-2xl",
+      className: "relative z-30 w-full max-w-[500px] mx-auto -mt-16 pointer-events-none drop-shadow-2xl",
       type: 'screen' 
     }
   },
@@ -96,8 +99,11 @@ const THEMES = [
     fontClass: 'font-mono text-lg',
     inkHex: "#22c55e", 
     placeholder: '> INITIALIZE_POEM...',
+    
+    sound: '/sounds/terminalsoundeffect.mp3',
+    isContinuousSound: true,
     isTerminal: true,
-    sound: null
+    volumeBoost: 0.4, 
   }
 ];
 
@@ -109,34 +115,134 @@ export default function Editor() {
   const [usedWords, setUsedWords] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [hasStartedTyping, setHasStartedTyping] = useState(false);
   
-  // ⚡ REFS for Direct DOM Manipulation (Zero Lag)
+  // 🔊 VOLUME STATE (Default 0.5)
+  const [masterVolume, setMasterVolume] = useState(0.5);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cursorImageRef = useRef<HTMLImageElement>(null);
+  
+  // Audio Refs
   const dingRef = useRef<HTMLAudioElement | null>(null);
+  const continuousAudioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Game Loop Refs
+  const lastInteractionTime = useRef<number>(0);
+  const checkInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // 💾 LOAD VOLUME
+  useEffect(() => {
+    const savedVol = localStorage.getItem('poem-volume');
+    if (savedVol !== null) {
+      setMasterVolume(parseFloat(savedVol));
+    }
+  }, []);
+
+  // 💾 SAVE VOLUME
+  const handleVolumeChange = (newVol: number) => {
+    setMasterVolume(newVol);
+    localStorage.setItem('poem-volume', newVol.toString());
+    
+    // Immediate Update for Typewriter Ding
+    if (dingRef.current) dingRef.current.volume = newVol;
+    
+    // Immediate Update for Continuous Audio
+    if (continuousAudioRef.current) {
+        const boost = currentTheme.volumeBoost || 1.0;
+        const targetVol = Math.min(1, newVol * boost);
+        if (!continuousAudioRef.current.paused) {
+            continuousAudioRef.current.volume = targetVol;
+        }
+    }
+  };
 
   useEffect(() => {
     document.body.style.backgroundColor = currentTheme.bgHex;
   }, [currentTheme]);
 
-  // ✅ NEW: Trigger cursor position immediately on load (wait for fonts)
+  // 🎵 AUDIO ENGINE
   useEffect(() => {
-    if (document.fonts) {
-      document.fonts.ready.then(() => {
-        updateCursorPosition();
-      });
+    lastInteractionTime.current = 0; 
+
+    if (currentTheme.isContinuousSound && currentTheme.sound) {
+      if (!continuousAudioRef.current) {
+        continuousAudioRef.current = new Audio(currentTheme.sound);
+        continuousAudioRef.current.loop = true; 
+        continuousAudioRef.current.volume = masterVolume;
+        continuousAudioRef.current.playbackRate = 1.0;
+      } else {
+        continuousAudioRef.current.volume = masterVolume; 
+      }
     } else {
-      // Fallback for browsers that don't support document.fonts
-      setTimeout(updateCursorPosition, 100);
+      if (continuousAudioRef.current) {
+        continuousAudioRef.current.pause();
+        continuousAudioRef.current = null;
+      }
     }
-  }, [currentTheme]);
+
+    if (currentTheme.isContinuousSound) {
+      checkInterval.current = setInterval(() => {
+        const audio = continuousAudioRef.current;
+        if (!audio) return;
+
+        const boost = currentTheme.volumeBoost || 1.0;
+        const targetVol = Math.min(1, masterVolume * boost);
+
+        const now = Date.now();
+        // Wait 500ms before fading out
+        const isTypingActive = lastInteractionTime.current > 0 && (now - lastInteractionTime.current) < 500;
+
+        if (isTypingActive) {
+          if (audio.volume < targetVol) audio.volume = targetVol;
+          if (audio.paused) {
+            const p = audio.play();
+            if (p) p.catch(() => {});
+          }
+        } else {
+          // Fade out logic
+          if (!audio.paused) {
+             if (audio.volume > 0.05) {
+                audio.volume = Math.max(0, audio.volume - 0.05); 
+             } else {
+                audio.pause();
+                audio.volume = targetVol; 
+             }
+          }
+        }
+      }, 100);
+    }
+
+    return () => {
+      if (checkInterval.current) clearInterval(checkInterval.current);
+      if (continuousAudioRef.current) continuousAudioRef.current.pause();
+    };
+  }, [currentTheme, masterVolume]);
+
+  useEffect(() => {
+    const config = currentTheme.imageConfig;
+    const img = cursorImageRef.current;
+    
+    if (config?.type === 'cursor' && img) {
+      if (hasStartedTyping) {
+         img.style.transitionDuration = '0s'; 
+         updateCursorPosition(); 
+      } else {
+         const startX = window.innerWidth * 0.8;
+         const startY = window.innerHeight * 0.25;
+         
+         img.style.transitionDuration = '0s'; 
+         img.style.transform = `translate(${startX}px, ${startY}px)`;
+         img.style.opacity = '1'; 
+      }
+    }
+  }, [currentTheme, hasStartedTyping]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       dingRef.current = new Audio('/sounds/ding.mp3');
-      if (dingRef.current) dingRef.current.volume = 0.6;
+      if (dingRef.current) dingRef.current.volume = masterVolume;
     }
-    
     const fetchWords = async () => {
       const today = new Date().toLocaleDateString('en-CA');
       const { data } = await supabase.from('daily_challenges').select('words').eq('release_date', today).single();
@@ -150,52 +256,77 @@ export default function Editor() {
     setUsedWords(found);
   }, [poem, dailyWords]);
 
-  // 📍 CURSOR TRACKING ENGINE
   const updateCursorPosition = () => {
-    if (!textareaRef.current || !cursorImageRef.current || currentTheme.imageConfig?.type !== 'cursor') return;
+    if (!textareaRef.current) return;
 
     const textarea = textareaRef.current;
-    const image = cursorImageRef.current;
-    const config = currentTheme.imageConfig;
-
-    // 1. Get exact pixel coordinates
     const coordinates = getCaretCoordinates(textarea, textarea.selectionEnd);
+    const rect = textarea.getBoundingClientRect();
+    
+    const top = rect.top + window.scrollY + coordinates.top - textarea.scrollTop;
+    
+    if (cursorImageRef.current && currentTheme.imageConfig?.type === 'cursor') {
+       const image = cursorImageRef.current;
+       const config = currentTheme.imageConfig;
+       const left = rect.left + window.scrollX + coordinates.left + (config.tipOffset?.x || 0);
+       const imgTop = top + (config.tipOffset?.y || 0);
 
-    // 2. Adjust for scrolling
-    const scrollTop = textarea.scrollTop;
+       if (image.style.transitionDuration === '0s' && hasStartedTyping) {
+          image.style.transitionDuration = '0.8s'; 
+          setTimeout(() => {
+             if (cursorImageRef.current) cursorImageRef.current.style.transitionDuration = '75ms';
+          }, 800);
+       } 
+       else if (hasStartedTyping && image.style.transitionDuration === '0s') {
+          image.style.transitionDuration = '75ms';
+       }
 
-    // 3. Calculate final position
-    const top = coordinates.top - scrollTop + (config.tipOffset?.y || 0);
-    const left = coordinates.left + (config.tipOffset?.x || 0);
-
-    // 4. Move Image
-    image.style.transform = `translate(${left}px, ${top}px)`;
-    image.style.opacity = '1'; // Make visible immediately
+       image.style.transform = `translate(${left}px, ${imgTop}px)`;
+       image.style.opacity = '1';
+    }
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setPoem(e.target.value);
-    requestAnimationFrame(updateCursorPosition);
+    lastInteractionTime.current = Date.now();
+
+    if (!hasStartedTyping) {
+      setHasStartedTyping(true);
+      setTimeout(() => requestAnimationFrame(updateCursorPosition), 10);
+    } else {
+      requestAnimationFrame(updateCursorPosition);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    requestAnimationFrame(updateCursorPosition);
+    if (hasStartedTyping) requestAnimationFrame(updateCursorPosition);
+    lastInteractionTime.current = Date.now();
 
-    if (!currentTheme.sound && !currentTheme.hasTypewriterEffect) return;
+    if (e.key === 'Enter') {
+      if (currentTheme.restartOnNewline && continuousAudioRef.current) {
+        continuousAudioRef.current.currentTime = 0;
+        const boost = currentTheme.volumeBoost || 1.0;
+        continuousAudioRef.current.volume = Math.min(1, masterVolume * boost);
+        const p = continuousAudioRef.current.play();
+        if (p) p.catch(()=>{});
+      }
+    }
 
     if (currentTheme.hasTypewriterEffect && e.key === 'Enter') {
       if (dingRef.current) {
         dingRef.current.currentTime = 0;
+        dingRef.current.volume = masterVolume;
         dingRef.current.play().catch(() => {});
       }
       return; 
     }
 
-    if (currentTheme.sound) {
-      const sound = new Audio(currentTheme.sound);
-      sound.volume = 0.5;
-      sound.playbackRate = 0.9 + Math.random() * 0.2; 
-      sound.play().catch(() => {});
+    if (currentTheme.sound && !currentTheme.isContinuousSound) {
+        const sound = new Audio(currentTheme.sound);
+        const boost = currentTheme.volumeBoost || 1.0;
+        sound.volume = Math.min(1, masterVolume * boost);
+        sound.playbackRate = 0.9 + Math.random() * 0.2; 
+        sound.play().catch(() => {});
     }
   };
 
@@ -228,91 +359,87 @@ export default function Editor() {
 
   if (hasSubmitted) {
     return (
-      <div 
-        className={`min-h-screen flex items-center justify-center transition-colors duration-700 ${currentTheme.bgClass}`}
-        style={{ backgroundColor: currentTheme.bgHex }}
-      >
+      <div className={`min-h-screen flex items-center justify-center transition-colors duration-700 ${currentTheme.bgClass}`} style={{ backgroundColor: currentTheme.bgHex }}>
         <div className={`text-center space-y-6 p-12 rounded-xl shadow-2xl max-w-md w-full mx-4 ${currentTheme.isTerminal ? 'border-2 border-green-500 bg-black' : 'bg-white'}`}>
-          <h2 className={`text-4xl font-bold ${currentTheme.fontClass}`} style={{ color: currentTheme.inkHex }}>
-              Preserved. 🫰
-          </h2>
-          <Link 
-            href="/board" 
-            className={`block w-full py-4 font-bold uppercase tracking-widest rounded-lg hover:scale-105 transition-transform ${currentTheme.controlsClass}`}
-          >
-            View the Board
-          </Link>
+          <h2 className={`text-4xl font-bold ${currentTheme.fontClass}`} style={{ color: currentTheme.inkHex }}>Preserved. 🫰</h2>
+          <Link href="/board" className={`block w-full py-4 font-bold uppercase tracking-widest rounded-lg hover:scale-105 transition-transform ${currentTheme.controlsClass}`}>View the Board</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div 
-      className={`w-full flex flex-col flex-1 overflow-x-hidden transition-colors duration-700 min-h-screen ${currentTheme.bgClass}`}
-      style={{ backgroundColor: currentTheme.bgHex }}
-    >
-      {/* HEADER SECTION */}
-      <div className="flex-none pt-8 pb-6 px-4 z-20 flex flex-col items-center gap-6 relative">
-        <Link 
-          href="/board" 
-          className="absolute right-6 top-8 text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
-          style={{ color: currentTheme.uiHex }}
-        >
-           View Board →
-        </Link>
+    <div className={`w-full flex flex-col flex-1 overflow-x-hidden transition-colors duration-700 min-h-screen ${currentTheme.bgClass}`} style={{ backgroundColor: currentTheme.bgHex }}>
+      
+      {/* 🎵 STABLE AUDIO TAG */}
+      {currentTheme.isContinuousSound && (
+        <audio 
+          ref={continuousAudioRef}
+          src={currentTheme.sound}
+          key={currentTheme.id} 
+          loop 
+          preload="auto"
+          className="hidden"
+        />
+      )}
 
-        <div className="text-center space-y-2">
-           <h1 className="text-4xl font-serif font-bold transition-colors duration-300" style={{ color: currentTheme.uiHex }}>
-             Poetry Snaps 🫰
-           </h1>
-           <p className="text-sm italic opacity-80 transition-colors duration-300" style={{ color: currentTheme.uiHex }}>
-             Write a poem using today's words.
-           </p>
+      {/* HEADER */}
+      <div className="flex-none pt-8 pb-6 px-4 z-20 flex flex-col items-center gap-6 relative">
+        
+        {/* RIGHT: Volume & Link */}
+        <div className="absolute right-6 top-8 flex items-center gap-6">
+            
+            {/* 🔊 VISIBLE VOLUME SLIDER */}
+            <div className="flex items-center gap-3 bg-white/10 px-3 py-1.5 rounded-full border border-white/20 shadow-sm backdrop-blur-sm">
+                <button 
+                    onClick={() => handleVolumeChange(masterVolume === 0 ? 0.5 : 0)}
+                    className="text-lg opacity-80 hover:opacity-100 hover:scale-110 transition-all"
+                    style={{ color: currentTheme.uiHex }}
+                >
+                    {masterVolume === 0 ? "🔇" : "🔊"}
+                </button>
+                <input 
+                    type="range" 
+                    min="0" 
+                    max="1" 
+                    step="0.05" 
+                    value={masterVolume} 
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="w-24 h-1.5 rounded-full appearance-none cursor-pointer bg-gray-400/30 accent-current"
+                    style={{ accentColor: currentTheme.uiHex }}
+                />
+            </div>
+
+            <Link href="/board" className="text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity" style={{ color: currentTheme.uiHex }}>
+                View Board →
+            </Link>
         </div>
 
+        <div className="text-center space-y-2">
+           <h1 className="text-4xl font-serif font-bold transition-colors duration-300" style={{ color: currentTheme.uiHex }}>Poetry Snaps 🫰</h1>
+           <p className="text-sm italic opacity-80 transition-colors duration-300" style={{ color: currentTheme.uiHex }}>Write a poem using today's words.</p>
+        </div>
         <div className="flex flex-wrap justify-center gap-3">
           {dailyWords.map(word => {
             const isUsed = usedWords.includes(word);
             return (
-              <span 
-                key={word} 
-                className={`px-4 py-2 text-sm font-bold rounded-lg border-2 shadow-sm transition-all duration-300 ${getWordStyle(word, isUsed)}`}
-                style={{ color: (currentTheme.isTerminal && !isUsed) ? '#22c55e' : undefined }}
-              >
-                {word}
-              </span>
+              <span key={word} className={`px-4 py-2 text-sm font-bold rounded-lg border-2 shadow-sm transition-all duration-300 ${getWordStyle(word, isUsed)}`} style={{ color: (currentTheme.isTerminal && !isUsed) ? '#22c55e' : undefined }}>{word}</span>
             );
           })}
         </div>
-
         <div className="flex gap-2">
           {THEMES.map(theme => (
-            <button
-              key={theme.id}
-              onClick={() => setCurrentTheme(theme)}
-              className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-full transition-all shadow-sm transform hover:-translate-y-0.5 ${
-                currentTheme.id === theme.id 
-                ? "ring-2 ring-offset-2 ring-offset-transparent ring-current scale-105" 
-                : "opacity-60 hover:opacity-100"
-              } ${currentTheme.controlsClass}`}
-            >
-              {theme.name}
-            </button>
+            <button key={theme.id} onClick={() => setCurrentTheme(theme)} className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest rounded-full transition-all shadow-sm transform hover:-translate-y-0.5 ${currentTheme.id === theme.id ? "ring-2 ring-offset-2 ring-offset-transparent ring-current scale-105" : "opacity-60 hover:opacity-100"} ${currentTheme.controlsClass}`}>{theme.name}</button>
           ))}
         </div>
       </div>
 
-      {/* EDITOR WORKSPACE */}
+      {/* WORKSPACE */}
       <main className="flex-1 overflow-y-auto relative w-full flex justify-center perspective-1000 pb-20 px-4">
-        <div className="w-full max-w-5xl flex justify-center items-start min-h-full">
+        <div className="w-full max-w-5xl flex flex-col items-center min-h-full">
             
-            {/* PAPER CONTAINER */}
-            <div 
-              className={`relative w-full flex-1 mx-auto transition-all duration-500 flex flex-col ${currentTheme.paperClass}`}
-              style={currentTheme.paperStyle}
-            >
-              
+            {/* PAPER */}
+            <div className={`relative w-full flex-1 mx-auto transition-all duration-500 flex flex-col ${currentTheme.paperClass}`} style={currentTheme.paperStyle}>
               <textarea
                 ref={textareaRef}
                 className={`w-full flex-1 bg-transparent border-none outline-none resize-none p-10 md:p-16 ${currentTheme.fontClass} placeholder-opacity-40`}
@@ -321,52 +448,39 @@ export default function Editor() {
                 value={poem}
                 onChange={handleInput} 
                 onKeyDown={handleKeyDown}
-                onClick={updateCursorPosition} // Update on click
-                onScroll={updateCursorPosition} // Update on scroll
+                onClick={() => {
+                   if (!hasStartedTyping) {
+                      setHasStartedTyping(true);
+                      setTimeout(() => requestAnimationFrame(updateCursorPosition), 10);
+                   } else {
+                      updateCursorPosition();
+                   }
+                }}
+                onScroll={updateCursorPosition}
                 spellCheck={false}
               />
-
-              {/* ✍️ FOLLOWER IMAGE (Quill/Pencil) */}
-              {currentTheme.imageConfig && currentTheme.imageConfig.type === 'cursor' && (
-                  <img 
-                    ref={cursorImageRef}
-                    src={currentTheme.imageConfig.src}
-                    // 'opacity: 0' initially, but the useEffect will set it to 1 immediately
-                    className={`absolute left-0 top-0 z-50 will-change-transform ${currentTheme.imageConfig.className}`}
-                    alt="Writing Tool"
-                    style={{ opacity: 0 }} 
-                  />
-              )}
-
               <div className="p-10 md:p-16 pt-0 flex flex-col gap-6 mt-auto">
-                <input 
-                    type="text"
-                    placeholder={currentTheme.isTerminal ? "AUTHOR_ID_UNKNOWN" : "— Sign your name"}
-                    value={author}
-                    onChange={(e) => setAuthor(e.target.value)}
-                    style={{ color: currentTheme.inkHex }}
-                    className={`bg-transparent border-b border-dashed border-current outline-none text-center italic opacity-60 pb-2 ${currentTheme.fontClass}`}
-                />
-                <button
-                  onClick={handleSnap}
-                  disabled={!allWordsUsed || isSubmitting}
-                  className={`w-full py-4 font-bold transition-all uppercase tracking-widest shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none ${currentTheme.controlsClass}`}
-                >
-                  {allWordsUsed ? "Submit to Board 🫰" : "Complete Word Bank"}
-                </button>
+                <input type="text" placeholder={currentTheme.isTerminal ? "AUTHOR_ID_UNKNOWN" : "— Sign your name"} value={author} onChange={(e) => setAuthor(e.target.value)} style={{ color: currentTheme.inkHex }} className={`bg-transparent border-b border-dashed border-current outline-none text-center italic opacity-60 pb-2 ${currentTheme.fontClass}`} />
+                <button onClick={handleSnap} disabled={!allWordsUsed || isSubmitting} className={`w-full py-4 font-bold transition-all uppercase tracking-widest shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none ${currentTheme.controlsClass}`}>{allWordsUsed ? "Submit to Board 🫰" : "Complete Word Bank"}</button>
               </div>
             </div>
 
+            {/* 🖼️ TYPEWRITER IMAGE */}
+            {currentTheme.imageConfig && currentTheme.imageConfig.type === 'screen' && (
+              <img src={currentTheme.imageConfig.src} className={currentTheme.imageConfig.className} alt="Typewriter" />
+            )}
         </div>
       </main>
 
-      {/* 🖼️ SCREEN IMAGE (Typewriter - Fixed Bottom) */}
-      {currentTheme.imageConfig && currentTheme.imageConfig.type === 'screen' && (
-         <img 
-           src={currentTheme.imageConfig.src}
-           className={currentTheme.imageConfig.className}
-           alt="Theme Fixed Prop"
-         />
+      {/* ✍️ GLOBAL CURSOR IMAGE */}
+      {currentTheme.imageConfig && currentTheme.imageConfig.type === 'cursor' && (
+          <img 
+            ref={cursorImageRef}
+            src={currentTheme.imageConfig.src}
+            className={`fixed top-0 left-0 z-[100] will-change-transform ${currentTheme.imageConfig.className}`}
+            alt="Writing Tool"
+            style={{ opacity: 0 }} 
+          />
       )}
     </div>
   );
