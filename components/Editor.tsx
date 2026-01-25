@@ -4,7 +4,9 @@ import confetti from 'canvas-confetti';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 
-// 🎨 THEME CONFIGURATION
+// ------------------------------------------------------------------
+// 🔧 DYNAMIC THEME CONFIGURATION
+// ------------------------------------------------------------------
 const THEMES = [
   {
     id: 'quill',
@@ -18,8 +20,15 @@ const THEMES = [
     fontClass: "font-serif text-2xl leading-loose",
     inkHex: "#3e2723", 
     placeholder: "Dip your quill...",
-    hasProp: 'quill',
-    sound: '/sounds/scratch.mp3'
+    sound: '/sounds/scratch.mp3',
+    
+    // 🖼️ QUILL IMAGE (Side Column)
+    imageConfig: {
+      src: '/quill.png',
+      // Mobile: Top Right (absolute). Desktop: Simple static image.
+      className: "w-20 rotate-12 drop-shadow-xl pointer-events-none md:static absolute right-2 top-2 md:w-24 md:mt-4",
+      type: 'side'
+    }
   },
   {
     id: 'notepad',
@@ -39,8 +48,15 @@ const THEMES = [
     fontClass: "font-handwriting text-3xl leading-[3rem]", 
     inkHex: "#1e3a8a", 
     placeholder: "Jot something down...",
-    hasProp: 'pen',
-    sound: '/sounds/scribble.mp3'
+    sound: '/sounds/scribble.mp3',
+
+    // 🖼️ PENCIL IMAGE (Side Column)
+    imageConfig: {
+      src: '/pencil.png',
+      // Mobile: Top Right. Desktop: Simple static image.
+      className: "w-12 -rotate-6 drop-shadow-lg pointer-events-none md:static absolute right-4 top-4 md:w-16 md:mt-8",
+      type: 'side'
+    }
   },
   {
     id: 'typewriter',
@@ -55,7 +71,15 @@ const THEMES = [
     inkHex: "#000000",
     placeholder: 'Start typing...',
     hasTypewriterEffect: true,
-    sound: '/sounds/type.mp3'
+    sound: '/sounds/type.mp3',
+
+    // 🖼️ TYPEWRITER IMAGE (Fixed Bottom - Smaller)
+    imageConfig: {
+      src: '/typewriter.png',
+      // Reduced max-width to 500px so it's not huge
+      className: "fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[500px] z-30 pointer-events-none drop-shadow-2xl",
+      type: 'screen' 
+    }
   },
   {
     id: 'terminal',
@@ -97,7 +121,7 @@ export default function Editor() {
     }
     
     const fetchWords = async () => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toLocaleDateString('en-CA');
       const { data } = await supabase.from('daily_challenges').select('words').eq('release_date', today).single();
       setDailyWords(data?.words || ["soul", "echo", "night", "dance", "light"]);
     };
@@ -108,6 +132,8 @@ export default function Editor() {
     const found = dailyWords.filter(w => poem.toLowerCase().includes(w.toLowerCase()));
     setUsedWords(found);
   }, [poem, dailyWords]);
+
+  const allWordsUsed = dailyWords.length > 0 && usedWords.length === dailyWords.length;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!currentTheme.sound && !currentTheme.hasTypewriterEffect) return;
@@ -144,21 +170,6 @@ export default function Editor() {
     setIsSubmitting(false);
   };
 
-  const allWordsUsed = dailyWords.length > 0 && usedWords.length === dailyWords.length;
-
-  if (hasSubmitted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-stone-100">
-        <div className="text-center space-y-6 p-10 bg-white rounded-xl shadow-xl">
-          <h2 className="text-4xl font-serif font-bold">Preserved. 🫰</h2>
-          <Link href="/board" className="block w-full py-4 bg-stone-900 text-white rounded-lg hover:scale-105 transition-transform">
-            View the Board
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   const getWordStyle = (word: string, isUsed: boolean) => {
     if (currentTheme.isTerminal) {
       if (isUsed) return "bg-green-500 text-black border-green-500 line-through decoration-black";
@@ -168,15 +179,39 @@ export default function Editor() {
     return `${currentTheme.controlsClass} opacity-100`;
   };
 
+  // ✅ FIXED SUBMITTED SCREEN
+  if (hasSubmitted) {
+    return (
+      <div 
+        className={`min-h-screen flex items-center justify-center transition-colors duration-700 ${currentTheme.bgClass}`}
+        style={{ backgroundColor: currentTheme.bgHex }}
+      >
+        <div className={`text-center space-y-6 p-12 rounded-xl shadow-2xl max-w-md w-full mx-4 ${currentTheme.isTerminal ? 'border-2 border-green-500 bg-black' : 'bg-white'}`}>
+          <h2 
+              className={`text-4xl font-bold ${currentTheme.fontClass}`}
+              // Use inkHex for card text so it matches the theme's "ink" color (Green for Terminal, Black/Blue for others)
+              style={{ color: currentTheme.inkHex }}
+          >
+              Preserved. 🫰
+          </h2>
+          <Link 
+            href="/board" 
+            className={`block w-full py-4 font-bold uppercase tracking-widest rounded-lg hover:scale-105 transition-transform ${currentTheme.controlsClass}`}
+          >
+            View the Board
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
-      className={`w-full flex flex-col flex-1 overflow-hidden transition-colors duration-700 min-h-screen ${currentTheme.bgClass}`}
+      className={`w-full flex flex-col flex-1 overflow-x-hidden transition-colors duration-700 min-h-screen ${currentTheme.bgClass}`}
       style={{ backgroundColor: currentTheme.bgHex }}
     >
       {/* HEADER SECTION */}
       <div className="flex-none pt-8 pb-6 px-4 z-20 flex flex-col items-center gap-6 relative">
-        
-        {/* NEW: View Board Link (Replaces Navbar) */}
         <Link 
           href="/board" 
           className="absolute right-6 top-8 text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-opacity"
@@ -185,23 +220,15 @@ export default function Editor() {
            View Board →
         </Link>
 
-        {/* Page Title */}
         <div className="text-center space-y-2">
-           <h1 
-             className="text-4xl font-serif font-bold transition-colors duration-300"
-             style={{ color: currentTheme.uiHex }}
-           >
+           <h1 className="text-4xl font-serif font-bold transition-colors duration-300" style={{ color: currentTheme.uiHex }}>
              Poetry Snaps 🫰
            </h1>
-           <p 
-             className="text-sm italic opacity-80 transition-colors duration-300"
-             style={{ color: currentTheme.uiHex }}
-           >
+           <p className="text-sm italic opacity-80 transition-colors duration-300" style={{ color: currentTheme.uiHex }}>
              Write a poem using today's words.
            </p>
         </div>
 
-        {/* Word Bank */}
         <div className="flex flex-wrap justify-center gap-3">
           {dailyWords.map(word => {
             const isUsed = usedWords.includes(word);
@@ -209,9 +236,7 @@ export default function Editor() {
               <span 
                 key={word} 
                 className={`px-4 py-2 text-sm font-bold rounded-lg border-2 shadow-sm transition-all duration-300 ${getWordStyle(word, isUsed)}`}
-                style={{ 
-                   color: (currentTheme.isTerminal && !isUsed) ? '#22c55e' : undefined 
-                }}
+                style={{ color: (currentTheme.isTerminal && !isUsed) ? '#22c55e' : undefined }}
               >
                 {word}
               </span>
@@ -219,7 +244,6 @@ export default function Editor() {
           })}
         </div>
 
-        {/* Theme Switcher */}
         <div className="flex gap-2">
           {THEMES.map(theme => (
             <button
@@ -238,23 +262,23 @@ export default function Editor() {
       </div>
 
       {/* EDITOR WORKSPACE */}
-      <main className="flex-1 overflow-y-auto relative w-full flex justify-center perspective-1000 pb-20">
-        <div className="py-8 px-4 w-full flex justify-center items-start min-h-full">
+      <main className="flex-1 overflow-y-auto relative w-full flex justify-center perspective-1000 pb-20 px-4">
+        
+        {/* LAYOUT CONTAINER: Side-by-Side Flex on Desktop */}
+        <div className="w-full max-w-5xl flex flex-col md:flex-row items-start justify-center gap-6 relative">
+
+            {/* 1. THE PAPER (Takes flex-1) */}
             <div 
-              className={`relative w-full transition-all duration-500 flex flex-col ${currentTheme.paperClass}`}
+              className={`relative w-full flex-1 mx-auto transition-all duration-500 flex flex-col ${currentTheme.paperClass}`}
               style={currentTheme.paperStyle}
             >
-              {currentTheme.hasProp === 'quill' && (
-                <img src="https://cdn-icons-png.flaticon.com/512/1087/1087090.png" alt="Quill" className="absolute -right-20 top-0 w-32 drop-shadow-2xl rotate-12 pointer-events-none hidden xl:block"/>
-              )}
-              {currentTheme.hasProp === 'pen' && (
-                <img src="https://cdn-icons-png.flaticon.com/512/588/588395.png" alt="Pen" className="absolute -right-12 top-10 w-10 drop-shadow-xl -rotate-6 pointer-events-none hidden xl:block"/>
-              )}
-              
-              {currentTheme.isTerminal && (
-                <div className="absolute -top-6 right-0 text-[10px] text-green-500 font-mono tracking-widest">
-                  [ SECURE_CONNECTION: ESTABLISHED ]
-                </div>
+              {/* MOBILE IMAGE: Shows inside top-right only on small screens */}
+              {currentTheme.imageConfig && currentTheme.imageConfig.type === 'side' && (
+                 <img 
+                    src={currentTheme.imageConfig.src}
+                    className={`md:hidden ${currentTheme.imageConfig.className}`} 
+                    alt="Prop"
+                 />
               )}
 
               <textarea
@@ -285,8 +309,29 @@ export default function Editor() {
                 </button>
               </div>
             </div>
+
+            {/* 2. THE SIDE PROP (Desktop Only) */}
+            {/* Sits in a dedicated column to the right, impossible to overlap paper */}
+            {currentTheme.imageConfig && currentTheme.imageConfig.type === 'side' && (
+              <div className="hidden md:block flex-none w-24 sticky top-10">
+                  <img 
+                    src={currentTheme.imageConfig.src}
+                    className={`${currentTheme.imageConfig.className}`}
+                    alt="Theme Prop"
+                  />
+              </div>
+            )}
         </div>
       </main>
+
+      {/* 🖼️ SCREEN IMAGE (Typewriter - Fixed Bottom) */}
+      {currentTheme.imageConfig && currentTheme.imageConfig.type === 'screen' && (
+         <img 
+           src={currentTheme.imageConfig.src}
+           className={currentTheme.imageConfig.className}
+           alt="Theme Fixed Prop"
+         />
+      )}
     </div>
   );
 }
