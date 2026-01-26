@@ -1,19 +1,21 @@
-import type { Config } from 'tailwindcss'
+import type { Config } from "tailwindcss";
 
-export default {
+const config: Config = {
   content: [
-    './app/**/*.{js,ts,jsx,tsx}',
-    './components/**/*.{js,ts,jsx,tsx}',
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)'],
-        serif: ['var(--font-serif)'],
-        typewriter: ['var(--font-typewriter)'],
-        handwriting: ['var(--font-handwriting)'],
+        serif: ['"Playfair Display"', 'serif'],
+        handwriting: ['"Caveat"', 'cursive'],
+        typewriter: ['"Courier Prime"', 'monospace'],
+        mono: ['"Fira Code"', 'monospace'],
       },
     },
   },
   plugins: [],
-} satisfies Config
+};
+export default config;
