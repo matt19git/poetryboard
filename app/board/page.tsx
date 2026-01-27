@@ -1,266 +1,229 @@
 "use client";
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, forwardRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 
-// 1. Helper: Format Date
+// 🛑 DYNAMIC IMPORT
+const HTMLFlipBook = dynamic(
+  () => import('react-pageflip').then((mod) => mod.default), 
+  { 
+    ssr: false,
+    loading: () => <div className="text-white/50 mt-20 animate-pulse font-serif">Loading The Archive...</div> 
+  }
+);
+
+// --- 1. HELPERS ---
 const formatDate = (dateString: string) => {
   if (!dateString) return '';
   return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
     day: 'numeric'
   });
 };
 
-// 2. Helper: Deterministic Randomness
-const getCardVisuals = (id: any) => {
-  const safeId = String(id || '0');
-  const num = safeId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
-  return {
-    rotation: (num % 10) - 5,   // Rotate -5deg to +5deg
-    offsetY: (num % 30) - 15,   // Shift up/down 15px
-    pinColor: num % 2 === 0 ? 'bg-red-600' : 'bg-blue-600',
-    pinOffset: (num % 60) + 20, // Pin position along the top
-  };
-};
+// --- 2. PAGE COMPONENT ---
+const Page = forwardRef((props: any, ref: any) => {
+  const { poem, type, pageNumber } = props;
 
+  // -- COVER (Dark Leather) --
+  if (type === 'cover') {
+    return (
+      <div ref={ref} className="h-full w-full bg-[#2b1b17] text-[#d7ccc8] border-r-4 border-[#1a0f0d] flex items-center justify-center p-8 shadow-2xl"
+           style={{ backgroundColor: '#2b1b17' }}> {/* Inline style for safety */}
+        <div className="border-4 border-double border-[#d7ccc8]/30 h-full w-full flex flex-col items-center justify-center text-center p-6">
+           <h1 className="text-5xl font-serif tracking-widest drop-shadow-md mb-2 text-[#d7ccc8]">POEMS</h1>
+           <div className="w-10 h-0.5 bg-[#d7ccc8]/50 mb-2"></div>
+           <p className="text-xs tracking-[0.4em] uppercase opacity-70 text-[#d7ccc8]">Volume I</p>
+        </div>
+      </div>
+    );
+  }
+
+  // -- TITLE PAGE (Paper) --
+  if (type === 'title') {
+    return (
+      <div ref={ref} className="h-full w-full bg-[#f9f7f1] p-10 flex flex-col items-center justify-center text-center shadow-inner border-r border-gray-200 page-content"
+           style={{ backgroundColor: '#f9f7f1' }}> 
+         <h2 className="text-3xl font-serif italic text-gray-800 mb-2">The Collection</h2>
+         <div className="w-8 h-px bg-gray-300 mb-4"></div>
+         <p className="text-xs uppercase tracking-widest text-gray-400">Personal Archive</p>
+      </div>
+    );
+  }
+
+  // -- BACK COVER --
+  if (type === 'back') {
+    return <div ref={ref} className="h-full w-full bg-[#2b1b17] shadow-inner border-l-2 border-[#5d4037]" style={{ backgroundColor: '#2b1b17' }}></div>;
+  }
+
+  // -- CONTENT PAGES (Paper) --
+  return (
+    <div ref={ref} className="h-full w-full bg-[#f9f7f1] relative shadow-inner overflow-hidden border-r border-gray-100 page-content"
+         style={{ backgroundColor: '#f9f7f1' }}> {/* Force Cream/White */}
+      
+      {/* Top Aligned Content Container */}
+      <div className="h-full p-12 flex flex-col justify-start items-start">
+        
+        {/* Header - Strictly at the top */}
+        {type === 'metadata' && (
+          <div className="w-full border-b border-gray-300 pb-4 mb-6 mt-2">
+            <h2 className="text-2xl font-serif font-bold text-gray-900 m-0 p-0">
+              {formatDate(poem.created_at)}
+            </h2>
+            <div className="text-sm italic text-gray-600 mt-2 font-serif">
+              Penned by {poem.author_name || "Anonymous"}
+            </div>
+          </div>
+        )}
+
+        {/* Content Body - Starts immediately after header */}
+        <div className="w-full flex-1 text-left">
+          {type === 'metadata' ? (
+             <div className="flex flex-wrap gap-2 opacity-70 pt-2">
+                {poem.word_bank?.map((w: string) => (
+                  <span key={w} className="px-3 py-1 text-[10px] border border-gray-400 rounded-sm text-gray-600 uppercase tracking-widest font-sans">
+                    {w}
+                  </span>
+                ))}
+             </div>
+          ) : (
+            <div className="whitespace-pre-wrap text-lg leading-loose font-serif text-gray-900 pt-2 pl-1">
+              {poem.content}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="w-full mt-auto pt-6 flex justify-between items-end text-gray-400 border-t border-transparent">
+           <span className="text-[10px] font-mono uppercase tracking-widest">
+             {type === 'metadata' ? `ID ${String(poem.id).slice(0,4)}` : '•'}
+           </span>
+           <span className="text-xs font-serif">{pageNumber}</span>
+        </div>
+      </div>
+      
+      {/* Spine Gradient Overlay */}
+      <div className={`absolute top-0 bottom-0 w-12 pointer-events-none opacity-10 ${type === 'metadata' ? 'right-0 bg-gradient-to-l' : 'left-0 bg-gradient-to-r'} from-black to-transparent`}></div>
+    </div>
+  );
+});
+
+Page.displayName = 'Page';
+
+
+// --- 3. MAIN BOARD ---
 export default function Board() {
   const [poems, setPoems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPoem, setSelectedPoem] = useState<any>(null);
+  const bookRef = useRef<any>(null);
 
   useEffect(() => {
+    // Force clean the body to ensure no global CSS leakage
+    document.body.style.backgroundColor = '#1c1917';
+    
     const fetchPoems = async () => {
-      const { data } = await supabase
-        .from('poems')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      const { data } = await supabase.from('poems').select('*').order('created_at', { ascending: false });
       if (data) setPoems(data);
       setLoading(false);
     };
-
     fetchPoems();
+
+    return () => { document.body.style.backgroundColor = ''; };
   }, []);
 
-  // --- STYLE FACTORY ---
-  const getThemeStyles = (style: any) => {
-    const isTerminal = style.isTerminal;
-    
-    let styles = {
-      cardBg: '#fff',
-      bgImage: 'none',
-      textColor: '#000',
-      fontFamily: 'serif',
-      shadow: 'shadow-[3px_5px_10px_rgba(0,0,0,0.3)]',
-      border: '',
-      bgSize: 'auto',
-      accentColor: '#000'
-    };
-
-    if (style.id === 'notepad') {
-      styles.cardBg = '#fef9c3'; 
-      styles.bgImage = "linear-gradient(transparent 1.9rem, #94a3b8 1.9rem)";
-      styles.bgSize = '100% 2rem';
-      styles.textColor = '#1e3a8a'; 
-      styles.fontFamily = '"Caveat", cursive';
-      styles.accentColor = '#1e3a8a';
-    } else if (style.id === 'quill') {
-      styles.cardBg = '#eaddcf'; 
-      styles.bgImage = "url('https://www.transparenttextures.com/patterns/wood-pattern.png')";
-      styles.textColor = '#3e2723'; 
-      styles.fontFamily = '"Playfair Display", serif';
-      styles.accentColor = '#3e2723';
-    } else if (isTerminal) {
-      styles.cardBg = '#000';
-      styles.textColor = '#22c55e'; 
-      styles.fontFamily = '"Fira Code", monospace';
-      styles.border = 'border-2 border-green-500';
-      styles.shadow = 'shadow-[0_0_15px_rgba(0,255,0,0.3)]';
-      styles.accentColor = '#22c55e';
-    } else {
-      styles.cardBg = '#fff';
-      styles.textColor = '#000';
-      styles.fontFamily = '"Courier Prime", monospace';
-      styles.accentColor = '#000';
-    }
-    
-    return styles;
-  };
-
   return (
-    <>
-      <div className="min-h-screen w-full relative bg-[#8b5a2b] font-sans">
-        
-        {/* 🪵 1. BACKGROUND */}
-        <div 
-          className="fixed inset-0 pointer-events-none z-0"
-          style={{ 
-            backgroundColor: '#8b5a2b',
-            backgroundImage: `url("https://www.transparenttextures.com/patterns/cork-board.png")`,
-          }}
-        ></div>
-
-        {/* 📌 2. HEADER */}
-        <div className="sticky top-0 z-40 w-full bg-black/10 backdrop-blur-sm border-b border-black/5 p-4 flex justify-between items-center shadow-sm">
-          <div className="bg-white/90 px-6 py-2 transform -rotate-1 shadow-lg border border-gray-200">
-             <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">The Board 📌</h1>
-          </div>
-          
-          <Link 
-            href="/" 
-            className="bg-white border-2 border-gray-800 text-gray-900 font-bold py-2 px-6 shadow-[4px_4px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_rgba(0,0,0,1)] transition-all"
-          >
-            Post a Poem +
-          </Link>
-        </div>
-
-        {/* 🃏 3. CARD CONTAINER */}
-        <div className="relative z-10 w-full p-8 pb-40">
-          <div className="flex flex-wrap justify-center items-start gap-12">
-            
-            {loading && (
-               <div className="text-white/60 font-bold text-2xl animate-pulse mt-20 w-full text-center">Pinning poems...</div>
-            )}
-
-            {poems.map((poem) => {
-              const style = poem.style_data || {};
-              const visuals = getCardVisuals(poem.id);
-              const theme = getThemeStyles(style);
-
-              return (
-                <div
-                  key={poem.id}
-                  onClick={() => setSelectedPoem(poem)}
-                  // 🛑 SWITCHED TO DIV WITH CURSOR POINTER
-                  className="relative shrink-0 w-[300px] h-[300px] cursor-pointer group transition-all duration-300 hover:z-30 hover:scale-105"
-                  style={{
-                    transform: `rotate(${visuals.rotation}deg) translateY(${visuals.offsetY}px)`,
-                  }}
-                >
-                  {/* 📍 THE PIN */}
-                  <div 
-                    className="absolute -top-3 z-20 drop-shadow-md"
-                    style={{ left: `${visuals.pinOffset}%` }}
-                  >
-                    <div className={`w-4 h-4 rounded-full ${visuals.pinColor} border border-black/20 shadow-inner`}></div>
-                    <div className="w-0.5 h-2.5 bg-gray-400 mx-auto -mt-0.5 shadow-sm"></div>
-                  </div>
-
-                  {/* 📄 THE PAPER (Mini Preview) */}
-                  <div 
-                    className={`
-                      relative w-full h-full p-6 pt-10 flex flex-col overflow-hidden
-                      ${theme.shadow} ${theme.border}
-                    `}
-                    style={{
-                      backgroundColor: theme.cardBg,
-                      backgroundImage: theme.bgImage,
-                      backgroundSize: theme.bgSize,
-                      color: theme.textColor,
-                      fontFamily: theme.fontFamily,
-                    }}
-                  >
-                    {/* Content - FADE OUT MASK */}
-                    <div 
-                      className="whitespace-pre-wrap break-words text-base leading-relaxed mb-2 flex-1 w-full"
-                      style={{ 
-                          maskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)',
-                          WebkitMaskImage: 'linear-gradient(to bottom, black 60%, transparent 100%)'
-                      }}
-                    >
-                      {poem.content}
-                    </div>
-
-                    {/* Footer */}
-                    <div 
-                      className="absolute bottom-0 left-0 right-0 p-4 pt-0 flex justify-between items-end opacity-60 pointer-events-none"
-                    >
-                      <span className="text-xs font-bold italic truncate max-w-[65%]">
-                        — {poem.author_name || "Anonymous"}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-widest opacity-80">
-                        {formatDate(poem.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+    // FLEX COLUMN: Forces Header to Top, Book to fill rest
+    <div className="min-h-screen w-full flex flex-col bg-[#1c1917] font-sans relative overflow-hidden">
+      
+      {/* 1. FIXED BACKGROUND LAYER */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+         {/* Wood Texture */}
+         <div className="absolute inset-0 bg-[#2c241b]" 
+              style={{ backgroundImage: `url("https://www.transparenttextures.com/patterns/wood-pattern.png")` }}>
+         </div>
+         {/* Vignette Shadow - Behind the book */}
+         <div className="absolute inset-0 bg-radial-gradient from-transparent to-black/80"></div>
       </div>
 
-      {/* 🔎 4. EXPANSION MODAL (Z-INDEX 100) */}
-      {selectedPoem && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={() => setSelectedPoem(null)}
-          ></div>
+      {/* 2. HEADER (Top Block) */}
+      <header className="relative z-20 w-full px-8 py-6 flex justify-between items-center bg-black/30 backdrop-blur-md border-b border-white/5 shadow-md">
+        <h1 className="text-[#eaddcf] font-serif italic text-2xl tracking-widest">The Archive</h1>
+        <Link 
+          href="/" 
+          className="bg-[#f9f7f1] text-[#2c241b] px-6 py-2 rounded-sm shadow-lg border border-[#d7ccc8] font-serif font-bold text-xs tracking-widest hover:bg-white hover:scale-105 transition-all"
+        >
+          + NEW ENTRY
+        </Link>
+      </header>
 
-          {/* Modal Content */}
-          {(() => {
-             const style = selectedPoem.style_data || {};
-             const theme = getThemeStyles(style);
-             
-             return (
-               <div 
-                 className={`
-                   relative w-full max-w-3xl max-h-[90vh] overflow-y-auto p-8 md:p-12 shadow-2xl animate-in zoom-in-95 duration-200
-                   ${theme.border}
-                 `}
-                 style={{
-                   backgroundColor: theme.cardBg,
-                   backgroundImage: theme.bgImage,
-                   backgroundSize: theme.bgSize, 
-                   backgroundAttachment: 'local', 
-                   color: theme.textColor,
-                   fontFamily: theme.fontFamily,
-                 }}
-                 onClick={(e) => e.stopPropagation()} 
-               >
-                 {/* Close Button */}
-                 <button 
-                   onClick={() => setSelectedPoem(null)}
-                   className="absolute top-4 right-4 p-2 rounded-full hover:bg-black/10 transition-colors z-50"
-                   aria-label="Close"
-                 >
-                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                 </button>
+      {/* 3. BOOK CONTAINER */}
+      <main className="relative z-10 flex-grow flex items-center justify-center p-8 overflow-hidden">
+        {loading ? (
+             <div className="text-[#d7ccc8] font-serif text-2xl animate-pulse">Retrieving volumes...</div>
+        ) : (
+          /* @ts-ignore */
+          <HTMLFlipBook
+            width={500}           
+            height={700}          
+            size="fixed"          
+            minWidth={300}
+            maxWidth={1000}
+            minHeight={400}
+            maxHeight={1200}
+            maxShadowOpacity={0.5} 
+            showCover={true}
+            mobileScrollSupport={true}
+            className="shadow-[0_50px_100px_rgba(0,0,0,0.8)]" 
+            ref={bookRef}
+            flippingTime={1000}
+            clickEventForward={true}
+            useMouseEvents={true}
+            showPageCorners={true}
+          >
+            {/* FRONT COVER */}
+            <Page key="cover" type="cover" />
 
-                 {/* Full Content */}
-                 <div className="whitespace-pre-wrap break-words text-xl md:text-2xl leading-loose min-h-[40vh]">
-                   {selectedPoem.content}
-                 </div>
+            {/* TITLE SPREAD */}
+            <Page key="inner-left" type="back" /> 
+            <Page key="title" type="title" />
 
-                 {/* Modal Footer */}
-                 <div 
-                   className="mt-12 pt-6 border-t border-current flex justify-between items-end opacity-70"
-                   style={{ borderColor: theme.textColor }}
-                 >
-                   <div>
-                     <span className="text-lg font-bold italic block">— {selectedPoem.author_name || "Anonymous"}</span>
-                     <div className="flex gap-2 mt-2">
-                       {selectedPoem.word_bank?.map((w: string) => (
-                         <span key={w} className="text-xs px-2 py-1 rounded-full bg-black/5 border border-black/5">
-                           {w}
-                         </span>
-                       ))}
-                     </div>
-                   </div>
-                   <span className="text-sm uppercase tracking-widest">
-                     {formatDate(selectedPoem.created_at)}
-                   </span>
-                 </div>
-               </div>
-             );
-          })()}
-        </div>
-      )}
-    </>
+            {/* CONTENT SPREADS */}
+            {poems.flatMap((poem, index) => [
+                <Page key={`meta-${poem.id}`} poem={poem} type="metadata" pageNumber={(index * 2) + 1} />,
+                <Page key={`content-${poem.id}`} poem={poem} type="poem" pageNumber={(index * 2) + 2} />
+            ])}
+
+            {/* BACK COVER */}
+            <Page key="back-inner" type="back" />
+            <Page key="back-cover" type="cover" />
+
+          </HTMLFlipBook>
+        )}
+      </main>
+
+      {/* 🛑 NUCLEAR CSS OVERRIDES */}
+      <style jsx global>{`
+        /* 1. Force the flipbook internal pages to be white/cream */
+        .stf__item {
+            background-color: #f9f7f1 !important;
+        }
+        
+        /* 2. Force the cover pages to be leather */
+        .stf__item.--cover {
+            background-color: #2b1b17 !important;
+        }
+
+        /* 3. Fix text color globally inside the book */
+        .page-content {
+            color: #1a1a1a !important;
+        }
+
+        .bg-radial-gradient { background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.8) 100%); }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+      `}</style>
+    </div>
   );
 }

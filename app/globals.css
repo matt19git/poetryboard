@@ -2,12 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* RESET: Force the body to be a normal block, not a flex container */
+/* RESET: Force body to be a block, preventing flex layout collisions */
 body {
   display: block !important;
   min-height: 100vh;
-  background-color: #e7e5e4; /* Stone-200 default */
   margin: 0;
   padding: 0;
-  overflow-x: hidden; /* Prevents horizontal scrollbars */
+  overflow-x: hidden;
+  background-color: #e7e5e4; /* Default App Background */
 }
