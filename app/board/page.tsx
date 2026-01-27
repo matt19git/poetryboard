@@ -9,7 +9,7 @@ const HTMLFlipBook = dynamic(
   () => import('react-pageflip').then((mod) => mod.default), 
   { 
     ssr: false,
-    loading: () => <div className="text-white/50 mt-20 animate-pulse font-serif">Loading The Archive...</div> 
+    loading: () => <div className="text-[#eaddcf] mt-20 animate-pulse font-serif text-xl tracking-widest">Loading The Archive...</div> 
   }
 );
 
@@ -24,50 +24,158 @@ const formatDate = (dateString: string) => {
   });
 };
 
-// --- 2. PAGE COMPONENT ---
-const Page = forwardRef((props: any, ref: any) => {
-  const { poem, type, pageNumber } = props;
+// --- 2. CALENDAR COMPONENT ---
+const CalendarDropdown = ({ 
+    currentDate, 
+    activeDates, 
+    onSelect, 
+    onClose 
+}: { 
+    currentDate: string, 
+    activeDates: string[], 
+    onSelect: (date: string) => void,
+    onClose: () => void 
+}) => {
+    const [viewDate, setViewDate] = useState(() => {
+        const [y, m, d] = currentDate.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    });
 
-  // -- COVER (Dark Leather) --
+    const getDaysInMonth = (date: Date) => {
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const days = new Date(year, month + 1, 0).getDate();
+        const firstDay = new Date(year, month, 1).getDay();
+        return { days, firstDay };
+    };
+
+    const { days, firstDay } = getDaysInMonth(viewDate);
+    const monthYear = viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const changeMonth = (offset: number) => {
+        const newDate = new Date(viewDate);
+        newDate.setMonth(newDate.getMonth() + offset);
+        setViewDate(newDate);
+    };
+
+    return (
+        <div 
+            className="absolute top-full mt-6 left-1/2 -translate-x-1/2 bg-[#1c1917] border border-[#eaddcf]/30 shadow-2xl p-6 z-[100] w-72 rounded-sm" 
+            onClick={(e) => e.stopPropagation()}
+        >
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#eaddcf]/10">
+                <button 
+                    onClick={() => changeMonth(-1)} 
+                    className="text-[#eaddcf] hover:text-white p-2 bg-transparent border-none outline-none"
+                >
+                    ◄
+                </button>
+                <span className="text-[#eaddcf] font-serif font-bold tracking-widest text-sm uppercase">{monthYear}</span>
+                <button 
+                    onClick={() => changeMonth(1)} 
+                    className="text-[#eaddcf] hover:text-white p-2 bg-transparent border-none outline-none"
+                >
+                    ►
+                </button>
+            </div>
+
+            {/* Grid */}
+            <div className="grid grid-cols-7 gap-1 text-center mb-4">
+                {['S','M','T','W','T','F','S'].map((d, i) => (
+                    <div key={i} className="text-[#eaddcf]/30 text-[9px] font-bold uppercase py-1">{d}</div>
+                ))}
+                
+                {Array.from({ length: firstDay }).map((_, i) => (
+                    <div key={`empty-${i}`} />
+                ))}
+
+                {/* Days */}
+                {Array.from({ length: days }).map((_, i) => {
+                    const day = i + 1;
+                    const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+                    const dateStr = dateObj.toLocaleDateString('en-CA');
+                    
+                    const hasPoems = activeDates.includes(dateStr);
+                    const isSelected = dateStr === currentDate;
+
+                    let buttonClass = "text-[#eaddcf]/30 hover:text-[#eaddcf]/60"; // Default (Inactive)
+                    
+                    if (hasPoems) {
+                        buttonClass = "text-[#eaddcf] font-bold border border-[#eaddcf]/40 hover:bg-[#eaddcf] hover:text-[#1c1917]"; // Gold (Active)
+                    }
+                    
+                    if (isSelected) {
+                        buttonClass = "bg-[#eaddcf] text-[#1c1917] font-bold shadow-md scale-110 border-none"; // Selected
+                    }
+
+                    return (
+                        <button
+                            key={day}
+                            onClick={() => { onSelect(dateStr); onClose(); }}
+                            className={`h-8 w-8 flex items-center justify-center text-xs rounded-full transition-all bg-transparent outline-none ${buttonClass}`}
+                        >
+                            {day}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* Legend */}
+            <div className="flex justify-center gap-4 text-[9px] uppercase tracking-widest pt-2 border-t border-[#eaddcf]/10">
+                <div className="flex items-center gap-2 text-[#eaddcf]">
+                    <span className="w-2 h-2 border border-[#eaddcf] rounded-full"></span>
+                    Available
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- 3. PAGE COMPONENT ---
+const Page = forwardRef((props: any, ref: any) => {
+  const { poem, type, pageNumber, date } = props;
+  const pageShadow = "shadow-[0_10px_30px_rgba(0,0,0,0.5)]";
+
+  const displayDate = date 
+    ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : "";
+
   if (type === 'cover') {
     return (
-      <div ref={ref} className="h-full w-full bg-[#2b1b17] text-[#d7ccc8] border-r-4 border-[#1a0f0d] flex items-center justify-center p-8 shadow-2xl"
-           style={{ backgroundColor: '#2b1b17' }}> {/* Inline style for safety */}
+      <div ref={ref} className={`h-full w-full bg-[#2b1b17] text-[#d7ccc8] border-r-4 border-[#1a0f0d] flex items-center justify-center p-8 cover-page ${pageShadow}`}>
         <div className="border-4 border-double border-[#d7ccc8]/30 h-full w-full flex flex-col items-center justify-center text-center p-6">
-           <h1 className="text-5xl font-serif tracking-widest drop-shadow-md mb-2 text-[#d7ccc8]">POEMS</h1>
-           <div className="w-10 h-0.5 bg-[#d7ccc8]/50 mb-2"></div>
+           <h1 className="text-5xl font-serif tracking-widest drop-shadow-md mb-4 text-[#d7ccc8]">POEMS</h1>
+           <div className="w-10 h-0.5 bg-[#d7ccc8]/50 mb-4"></div>
            <p className="text-xs tracking-[0.4em] uppercase opacity-70 text-[#d7ccc8]">Volume I</p>
+           <p className="text-[10px] tracking-widest uppercase opacity-50 text-[#d7ccc8] mt-6 border-t border-[#d7ccc8]/20 pt-2">
+             {displayDate}
+           </p>
         </div>
       </div>
     );
   }
 
-  // -- TITLE PAGE (Paper) --
   if (type === 'title') {
     return (
-      <div ref={ref} className="h-full w-full bg-[#f9f7f1] p-10 flex flex-col items-center justify-center text-center shadow-inner border-r border-gray-200 page-content"
+      <div ref={ref} className={`h-full w-full bg-[#f9f7f1] p-10 flex flex-col items-center justify-center text-center shadow-inner border-r border-gray-200 page-content ${pageShadow}`}
            style={{ backgroundColor: '#f9f7f1' }}> 
-         <h2 className="text-3xl font-serif italic text-gray-800 mb-2">The Collection</h2>
+         <h2 className="text-3xl font-serif italic text-gray-800 mb-2">The Daily Collection</h2>
          <div className="w-8 h-px bg-gray-300 mb-4"></div>
-         <p className="text-xs uppercase tracking-widest text-gray-400">Personal Archive</p>
+         <p className="text-xs uppercase tracking-widest text-gray-400">Restricted to This Date</p>
       </div>
     );
   }
 
-  // -- BACK COVER --
   if (type === 'back') {
-    return <div ref={ref} className="h-full w-full bg-[#2b1b17] shadow-inner border-l-2 border-[#5d4037]" style={{ backgroundColor: '#2b1b17' }}></div>;
+    return <div ref={ref} className={`h-full w-full bg-[#3e2723] shadow-inner border-l-2 border-[#5d4037] page-content ${pageShadow}`}></div>;
   }
 
-  // -- CONTENT PAGES (Paper) --
   return (
-    <div ref={ref} className="h-full w-full bg-[#f9f7f1] relative shadow-inner overflow-hidden border-r border-gray-100 page-content"
-         style={{ backgroundColor: '#f9f7f1' }}> {/* Force Cream/White */}
-      
-      {/* Top Aligned Content Container */}
+    <div ref={ref} className={`h-full w-full bg-[#f9f7f1] relative shadow-inner overflow-hidden border-r border-gray-100 page-content ${pageShadow}`}
+         style={{ backgroundColor: '#f9f7f1' }}> 
       <div className="h-full p-12 flex flex-col justify-start items-start">
-        
-        {/* Header - Strictly at the top */}
         {type === 'metadata' && (
           <div className="w-full border-b border-gray-300 pb-4 mb-6 mt-2">
             <h2 className="text-2xl font-serif font-bold text-gray-900 m-0 p-0">
@@ -78,16 +186,11 @@ const Page = forwardRef((props: any, ref: any) => {
             </div>
           </div>
         )}
-
-        {/* Content Body - Starts immediately after header */}
         <div className="w-full flex-1 text-left">
           {type === 'metadata' ? (
-             <div className="flex flex-wrap gap-2 opacity-70 pt-2">
-                {poem.word_bank?.map((w: string) => (
-                  <span key={w} className="px-3 py-1 text-[10px] border border-gray-400 rounded-sm text-gray-600 uppercase tracking-widest font-sans">
-                    {w}
-                  </span>
-                ))}
+             <div className="flex flex-col gap-4 opacity-10 mt-10">
+                <div className="w-8 h-8 rounded-full border border-black"></div>
+                <div className="h-px w-24 bg-black"></div>
              </div>
           ) : (
             <div className="whitespace-pre-wrap text-lg leading-loose font-serif text-gray-900 pt-2 pl-1">
@@ -95,8 +198,6 @@ const Page = forwardRef((props: any, ref: any) => {
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="w-full mt-auto pt-6 flex justify-between items-end text-gray-400 border-t border-transparent">
            <span className="text-[10px] font-mono uppercase tracking-widest">
              {type === 'metadata' ? `ID ${String(poem.id).slice(0,4)}` : '•'}
@@ -104,65 +205,231 @@ const Page = forwardRef((props: any, ref: any) => {
            <span className="text-xs font-serif">{pageNumber}</span>
         </div>
       </div>
-      
-      {/* Spine Gradient Overlay */}
       <div className={`absolute top-0 bottom-0 w-12 pointer-events-none opacity-10 ${type === 'metadata' ? 'right-0 bg-gradient-to-l' : 'left-0 bg-gradient-to-r'} from-black to-transparent`}></div>
     </div>
   );
 });
-
 Page.displayName = 'Page';
 
 
-// --- 3. MAIN BOARD ---
+// --- 4. MAIN BOARD ---
 export default function Board() {
   const [poems, setPoems] = useState<any[]>([]);
+  const [dailyWords, setDailyWords] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [availableDates, setAvailableDates] = useState<string[]>([]); 
+  const [selectedDate, setSelectedDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+
   const bookRef = useRef<any>(null);
 
   useEffect(() => {
-    // Force clean the body to ensure no global CSS leakage
     document.body.style.backgroundColor = '#1c1917';
     
-    const fetchPoems = async () => {
-      const { data } = await supabase.from('poems').select('*').order('created_at', { ascending: false });
-      if (data) setPoems(data);
-      setLoading(false);
-    };
-    fetchPoems();
+    const init = async () => {
+        const { data: allPoems } = await supabase
+            .from('poems')
+            .select('created_at')
+            .order('created_at', { ascending: false });
 
-    return () => { document.body.style.backgroundColor = ''; };
+        if (allPoems) {
+            const uniqueDates = Array.from(new Set(allPoems.map(p => 
+                new Date(p.created_at).toLocaleDateString('en-CA')
+            )));
+            
+            const today = new Date().toLocaleDateString('en-CA');
+            if (!uniqueDates.includes(today)) uniqueDates.unshift(today);
+            uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+            
+            setAvailableDates(uniqueDates);
+            
+            if (!uniqueDates.includes(selectedDate)) {
+                setSelectedDate(uniqueDates[0]);
+            }
+        }
+    };
+    init();
+
+    const handleGlobalClick = () => setIsCalendarOpen(false);
+    window.addEventListener('click', handleGlobalClick);
+    return () => { 
+        document.body.style.backgroundColor = ''; 
+        window.removeEventListener('click', handleGlobalClick);
+    };
   }, []);
 
+  useEffect(() => {
+    setLoading(true);
+    const fetchData = async () => {
+      const [year, month, day] = selectedDate.split('-').map(Number);
+      const start = new Date(year, month - 1, day, 0, 0, 0); 
+      const end = new Date(year, month - 1, day, 23, 59, 59);
+
+      const { data: poemsData } = await supabase
+        .from('poems')
+        .select('*')
+        .gte('created_at', start.toISOString())
+        .lte('created_at', end.toISOString())
+        .order('created_at', { ascending: false });
+
+      setPoems(poemsData || []);
+
+      const { data: wordsData } = await supabase
+        .from('daily_challenges')
+        .select('words')
+        .eq('release_date', selectedDate)
+        .single();
+      
+      if (wordsData?.words?.length > 0) {
+          setDailyWords(wordsData.words);
+      } else {
+          setDailyWords(["Soul", "Echo", "Night", "Dance", "Light"]);
+      }
+      setLoading(false);
+    };
+    if (selectedDate) fetchData();
+  }, [selectedDate]);
+
+  const navigateDate = (direction: 'prev' | 'next') => {
+      const currentIndex = availableDates.indexOf(selectedDate);
+      if (currentIndex === -1) {
+          setSelectedDate(availableDates[0]);
+          return;
+      }
+      let newIndex;
+      if (direction === 'prev') newIndex = currentIndex + 1; 
+      else newIndex = currentIndex - 1; 
+
+      if (newIndex >= 0 && newIndex < availableDates.length) {
+          setSelectedDate(availableDates[newIndex]);
+      }
+  };
+
+  const currentIndex = availableDates.indexOf(selectedDate);
+  const hasOlder = currentIndex !== -1 && currentIndex < availableDates.length - 1;
+  const hasNewer = currentIndex !== -1 && currentIndex > 0;
+  
+  const displayDate = new Date(selectedDate + 'T12:00:00');
+
   return (
-    // FLEX COLUMN: Forces Header to Top, Book to fill rest
     <div className="min-h-screen w-full flex flex-col bg-[#1c1917] font-sans relative overflow-hidden">
       
-      {/* 1. FIXED BACKGROUND LAYER */}
+      {/* 1. FIXED BACKGROUND */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-         {/* Wood Texture */}
          <div className="absolute inset-0 bg-[#2c241b]" 
               style={{ backgroundImage: `url("https://www.transparenttextures.com/patterns/wood-pattern.png")` }}>
          </div>
-         {/* Vignette Shadow - Behind the book */}
          <div className="absolute inset-0 bg-radial-gradient from-transparent to-black/80"></div>
       </div>
 
-      {/* 2. HEADER (Top Block) */}
-      <header className="relative z-20 w-full px-8 py-6 flex justify-between items-center bg-black/30 backdrop-blur-md border-b border-white/5 shadow-md">
-        <h1 className="text-[#eaddcf] font-serif italic text-2xl tracking-widest">The Archive</h1>
-        <Link 
-          href="/" 
-          className="bg-[#f9f7f1] text-[#2c241b] px-6 py-2 rounded-sm shadow-lg border border-[#d7ccc8] font-serif font-bold text-xs tracking-widest hover:bg-white hover:scale-105 transition-all"
-        >
-          + NEW ENTRY
-        </Link>
+      {/* 2. HEADER */}
+      <header className="relative z-20 w-full px-8 py-6 flex items-center justify-between bg-black/40 backdrop-blur-md border-b border-white/5 shadow-md">
+        
+        {/* LEFT: ARROWS + DATE (Cleaned) */}
+        <div className="flex-1 flex items-center gap-6">
+            <div className="flex items-center gap-4 relative">
+                
+                {/* ⬅️ PREV ARROW */}
+                <button 
+                    onClick={(e) => { e.stopPropagation(); navigateDate('prev'); }} 
+                    disabled={!hasOlder}
+                    className={`
+                         flex items-center justify-center w-12 h-12 rounded-full border border-[#eaddcf]/30
+                         transition-all duration-300 bg-transparent outline-none
+                        ${!hasOlder 
+                            ? 'text-white/10 cursor-not-allowed border-transparent' 
+                            : 'text-[#eaddcf] hover:bg-[#eaddcf] hover:text-[#1c1917] hover:scale-105 hover:border-transparent'}
+                    `}
+                    title="Previous Date"
+                >
+                    <span className="text-3xl pb-1.5">‹</span>
+                </button>
+
+                {/* DATE DISPLAY (Text Only, No White Box) */}
+                <div className="relative">
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); setIsCalendarOpen(!isCalendarOpen); }}
+                        className="group flex flex-col items-center justify-center outline-none bg-transparent border-none p-2"
+                    >
+                        <div className="flex items-center gap-3">
+                            <h1 className="text-[#eaddcf] font-serif italic text-3xl tracking-wide whitespace-nowrap group-hover:text-white transition-colors">
+                                {displayDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
+                            </h1>
+                            {/* Simple Calendar Icon */}
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-[#eaddcf]/40 group-hover:text-[#eaddcf] mt-1">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                            </svg>
+                        </div>
+                        <p className="text-[10px] uppercase tracking-[0.3em] text-[#eaddcf]/30 mt-1 group-hover:text-[#eaddcf]/60 transition-colors">
+                            {displayDate.getFullYear()} • {poems.length} Entries
+                        </p>
+                    </button>
+
+                    {/* CALENDAR DROPDOWN */}
+                    {isCalendarOpen && (
+                        <CalendarDropdown 
+                            currentDate={selectedDate} 
+                            activeDates={availableDates}
+                            onSelect={setSelectedDate}
+                            onClose={() => setIsCalendarOpen(false)}
+                        />
+                    )}
+                </div>
+
+                {/* ➡️ NEXT ARROW */}
+                <button 
+                    onClick={(e) => { e.stopPropagation(); navigateDate('next'); }} 
+                    disabled={!hasNewer}
+                    className={`
+                         flex items-center justify-center w-12 h-12 rounded-full border border-[#eaddcf]/30
+                         transition-all duration-300 bg-transparent outline-none
+                        ${!hasNewer 
+                            ? 'text-white/10 cursor-not-allowed border-transparent' 
+                            : 'text-[#eaddcf] hover:bg-[#eaddcf] hover:text-[#1c1917] hover:scale-105 hover:border-transparent'}
+                    `}
+                    title="Next Date"
+                >
+                    <span className="text-3xl pb-1.5">›</span>
+                </button>
+            </div>
+        </div>
+
+        {/* CENTER: Words of the Day */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
+             {dailyWords.length > 0 && (
+               <>
+                 <span className="text-[10px] text-[#eaddcf]/60 uppercase tracking-widest font-serif italic">
+                   Muse for this day:
+                 </span>
+                 <div className="flex gap-2">
+                    {dailyWords.map(w => (
+                        <span key={w} className="text-[10px] text-[#eaddcf] border border-[#eaddcf]/30 px-3 py-1 rounded-full uppercase tracking-wider opacity-90 bg-black/30">
+                            {w}
+                        </span>
+                    ))}
+                 </div>
+               </>
+             )}
+        </div>
+
+        {/* RIGHT: ACTIONS */}
+        <div className="flex-1 flex justify-end items-center gap-8">
+            <Link 
+                href="/" 
+                className="bg-[#f9f7f1] text-[#2c241b] px-8 py-3 rounded-sm shadow-lg border border-[#d7ccc8] font-serif font-bold text-xs tracking-widest hover:bg-white hover:scale-105 transition-all"
+            >
+                + WRITE POEM
+            </Link>
+        </div>
       </header>
 
       {/* 3. BOOK CONTAINER */}
       <main className="relative z-10 flex-grow flex items-center justify-center p-8 overflow-hidden">
         {loading ? (
-             <div className="text-[#d7ccc8] font-serif text-2xl animate-pulse">Retrieving volumes...</div>
+             <div className="text-[#d7ccc8] font-serif text-2xl animate-pulse">
+                Retrieving {displayDate.toLocaleDateString()}...
+             </div>
         ) : (
           /* @ts-ignore */
           <HTMLFlipBook
@@ -176,51 +443,41 @@ export default function Board() {
             maxShadowOpacity={0.5} 
             showCover={true}
             mobileScrollSupport={true}
-            className="shadow-[0_50px_100px_rgba(0,0,0,0.8)]" 
+            className="" 
             ref={bookRef}
             flippingTime={1000}
             clickEventForward={true}
             useMouseEvents={true}
             showPageCorners={true}
           >
-            {/* FRONT COVER */}
-            <Page key="cover" type="cover" />
-
-            {/* TITLE SPREAD */}
+            <Page key="cover" type="cover" date={selectedDate} />
             <Page key="inner-left" type="back" /> 
             <Page key="title" type="title" />
-
-            {/* CONTENT SPREADS */}
-            {poems.flatMap((poem, index) => [
-                <Page key={`meta-${poem.id}`} poem={poem} type="metadata" pageNumber={(index * 2) + 1} />,
-                <Page key={`content-${poem.id}`} poem={poem} type="poem" pageNumber={(index * 2) + 2} />
-            ])}
-
-            {/* BACK COVER */}
+            
+            {poems.length > 0 ? (
+                poems.flatMap((poem, index) => [
+                    <Page key={`meta-${poem.id}`} poem={poem} type="metadata" pageNumber={(index * 2) + 1} />,
+                    <Page key={`content-${poem.id}`} poem={poem} type="poem" pageNumber={(index * 2) + 2} />
+                ])
+            ) : (
+                 [
+                   <Page key="empty-meta" type="title" poem={{}} pageNumber="" />, 
+                   <div key="empty-content" className="bg-[#f9f7f1] h-full w-full shadow-[0_10px_30px_rgba(0,0,0,0.5)] relative overflow-hidden border-r border-gray-100 flex items-center justify-center p-10 text-center">
+                       <p className="text-gray-400 font-serif italic">No verses recorded.</p>
+                       <div className="absolute top-0 bottom-0 left-0 w-8 pointer-events-none opacity-5 bg-gradient-to-r from-black to-transparent"></div>
+                   </div>
+                 ]
+            )}
             <Page key="back-inner" type="back" />
             <Page key="back-cover" type="cover" />
-
           </HTMLFlipBook>
         )}
       </main>
 
-      {/* 🛑 NUCLEAR CSS OVERRIDES */}
       <style jsx global>{`
-        /* 1. Force the flipbook internal pages to be white/cream */
-        .stf__item {
-            background-color: #f9f7f1 !important;
-        }
-        
-        /* 2. Force the cover pages to be leather */
-        .stf__item.--cover {
-            background-color: #2b1b17 !important;
-        }
-
-        /* 3. Fix text color globally inside the book */
-        .page-content {
-            color: #1a1a1a !important;
-        }
-
+        .page-content { background-color: #f9f7f1 !important; }
+        .cover-page { background-color: #2b1b17 !important; }
+        .react-pageflip { background-color: transparent !important; }
         .bg-radial-gradient { background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.8) 100%); }
         ::-webkit-scrollbar { width: 0px; background: transparent; }
       `}</style>

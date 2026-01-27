@@ -36,8 +36,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${baskerville.variable} ${courier.variable} ${caveat.variable} antialiased`}>
-        {/* <Navbar />  <-- DELETE OR COMMENT THIS LINE */}
+<body 
+  className={`${inter.variable} ${baskerville.variable} ${courier.variable} ${caveat.variable} antialiased`}
+  suppressHydrationWarning={true} /* 👈 ADD THIS LINE */
+>        {/* <Navbar />  <-- DELETE OR COMMENT THIS LINE */}
         {children}
       </body>
     </html>
