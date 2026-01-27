@@ -8,7 +8,6 @@ export default function SinglePoem() {
   const [poem, setPoem] = useState<any>(null);
   const [displayedContent, setDisplayedContent] = useState('');
 
-  // Sound Refs
   const audioType = useRef<HTMLAudioElement | null>(null);
   const audioDing = useRef<HTMLAudioElement | null>(null);
 
@@ -68,13 +67,30 @@ export default function SinglePoem() {
   };
 
   return (
-    <main className={`min-h-screen p-6 flex items-center justify-center ${theme.bgClass}`}>
-      <div className={`max-w-xl w-full p-12 text-center ${theme.paperClass}`}>
-        <p className={`text-2xl leading-relaxed mb-8 ${theme.fontClass} ${theme.inkColor} whitespace-pre-wrap`}>
-          "{displayedContent}"
-        </p>
-        <div className={`pt-6 border-t border-stone-100 ${theme.fontClass} ${theme.inkColor} opacity-70`}>
-          — {poem.author_name}
+    <main className={`min-h-screen p-6 flex items-center justify-center ${theme.bgClass}`} style={{ backgroundColor: theme.bgHex }}>
+      {/* 🛑 IDENTICAL PAPER CONTAINER TO EDITOR */}
+      <div 
+        className={`relative shadow-2xl flex flex-col ${theme.paperClass}`}
+        style={{ width: '500px', height: '700px', ...theme.paperStyle }}
+      >
+        {/* 🛑 IDENTICAL TEXTAREA FOR DISPLAY */}
+        <textarea
+            readOnly
+            className={`w-full h-full bg-transparent border-none outline-none resize-none p-12 pb-20 ${theme.fontClass} overflow-hidden`}
+            style={{ 
+                color: theme.inkHex, 
+                scrollbarWidth: 'none', 
+                msOverflowStyle: 'none' 
+            }}
+            value={displayedContent}
+        />
+        
+        <style jsx>{`textarea::-webkit-scrollbar { display: none; }`}</style>
+
+        <div className="absolute bottom-12 left-0 right-0 text-center z-10 pointer-events-none">
+             <div className={`mx-12 pt-4 border-t opacity-70 ${theme.fontClass}`} style={{ color: theme.inkHex, borderColor: theme.inkHex }}>
+                — {poem.author_name}
+            </div>
         </div>
       </div>
     </main>
