@@ -28,11 +28,13 @@ const formatDate = (dateString: string) => {
 const CalendarDropdown = ({ 
     currentDate, 
     activeDates, 
+    earliestDate,
     onSelect, 
     onClose 
 }: { 
     currentDate: string, 
     activeDates: string[], 
+    earliestDate: string,
     onSelect: (date: string) => void,
     onClose: () => void 
 }) => {
@@ -40,6 +42,11 @@ const CalendarDropdown = ({
         const [y, m, d] = currentDate.split('-').map(Number);
         return new Date(y, m - 1, d);
     });
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const minDateObj = new Date(earliestDate + 'T12:00:00');
+    minDateObj.setHours(0,0,0,0);
 
     const getDaysInMonth = (date: Date) => {
         const year = date.getFullYear();
@@ -60,30 +67,20 @@ const CalendarDropdown = ({
 
     return (
         <div 
-            className="absolute top-full mt-6 left-1/2 -translate-x-1/2 bg-[#1c1917] border border-[#eaddcf]/30 shadow-2xl p-6 z-[100] w-72 rounded-sm" 
+            className="absolute top-full mt-6 left-1/2 -translate-x-1/2 bg-[#1c1917] border border-[#eaddcf]/40 shadow-[0_20px_50px_rgba(0,0,0,1)] p-6 z-[100] w-80 rounded-sm" 
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header */}
-            <div className="flex justify-between items-center mb-4 pb-2 border-b border-[#eaddcf]/10">
-                <button 
-                    onClick={() => changeMonth(-1)} 
-                    className="text-[#eaddcf] hover:text-white p-2 bg-transparent border-none outline-none"
-                >
-                    ◄
-                </button>
-                <span className="text-[#eaddcf] font-serif font-bold tracking-widest text-sm uppercase">{monthYear}</span>
-                <button 
-                    onClick={() => changeMonth(1)} 
-                    className="text-[#eaddcf] hover:text-white p-2 bg-transparent border-none outline-none"
-                >
-                    ►
-                </button>
+            <div className="flex justify-between items-center mb-4 pb-4 border-b border-[#eaddcf]/10">
+                <button onClick={() => changeMonth(-1)} className="text-[#eaddcf] hover:text-white p-2">◄</button>
+                <span className="text-[#eaddcf] font-serif font-bold tracking-widest text-lg uppercase">{monthYear}</span>
+                <button onClick={() => changeMonth(1)} className="text-[#eaddcf] hover:text-white p-2">►</button>
             </div>
 
             {/* Grid */}
-            <div className="grid grid-cols-7 gap-1 text-center mb-4">
+            <div className="grid grid-cols-7 gap-2 text-center mb-4">
                 {['S','M','T','W','T','F','S'].map((d, i) => (
-                    <div key={i} className="text-[#eaddcf]/30 text-[9px] font-bold uppercase py-1">{d}</div>
+                    <div key={i} className="text-[#eaddcf]/30 text-[10px] font-bold uppercase">{d}</div>
                 ))}
                 
                 {Array.from({ length: firstDay }).map((_, i) => (
@@ -96,36 +93,44 @@ const CalendarDropdown = ({
                     const dateObj = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
                     const dateStr = dateObj.toLocaleDateString('en-CA');
                     
+                    const isFuture = dateObj > today;
+                    const isBeforeArchive = dateObj < minDateObj;
+                    const isDisabled = isFuture || isBeforeArchive;
+
                     const hasPoems = activeDates.includes(dateStr);
                     const isSelected = dateStr === currentDate;
 
-                    let buttonClass = "text-[#eaddcf]/30 hover:text-[#eaddcf]/60"; // Default (Inactive)
+                    let buttonClass = "text-[#eaddcf]/60 hover:text-white cursor-pointer"; 
                     
-                    if (hasPoems) {
-                        buttonClass = "text-[#eaddcf] font-bold border border-[#eaddcf]/40 hover:bg-[#eaddcf] hover:text-[#1c1917]"; // Gold (Active)
-                    }
+                    if (isDisabled) {
+                        buttonClass = "text-[#eaddcf]/5 cursor-not-allowed"; 
+                    } 
                     
                     if (isSelected) {
-                        buttonClass = "bg-[#eaddcf] text-[#1c1917] font-bold shadow-md scale-110 border-none"; // Selected
+                        buttonClass = "bg-[#eaddcf] text-[#1c1917] font-bold shadow-lg rounded-full cursor-pointer"; 
                     }
 
                     return (
                         <button
                             key={day}
-                            onClick={() => { onSelect(dateStr); onClose(); }}
-                            className={`h-8 w-8 flex items-center justify-center text-xs rounded-full transition-all bg-transparent outline-none ${buttonClass}`}
+                            disabled={isDisabled}
+                            onClick={() => { if (!isDisabled) { onSelect(dateStr); onClose(); } }}
+                            className={`h-8 w-8 flex flex-col items-center justify-center text-xs rounded-full transition-all bg-transparent outline-none relative ${buttonClass}`}
                         >
-                            {day}
+                            <span className={hasPoems && !isSelected ? "font-bold text-[#eaddcf]" : ""}>{day}</span>
+                            {hasPoems && !isSelected && (
+                                <span className="absolute bottom-1 w-1 h-1 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.8)]"></span>
+                            )}
                         </button>
                     );
                 })}
             </div>
 
             {/* Legend */}
-            <div className="flex justify-center gap-4 text-[9px] uppercase tracking-widest pt-2 border-t border-[#eaddcf]/10">
-                <div className="flex items-center gap-2 text-[#eaddcf]">
-                    <span className="w-2 h-2 border border-[#eaddcf] rounded-full"></span>
-                    Available
+            <div className="flex justify-center gap-6 text-[9px] uppercase tracking-widest pt-3 border-t border-[#eaddcf]/10">
+                <div className="flex items-center gap-2 text-[#eaddcf]/80">
+                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shadow-[0_0_5px_rgba(245,158,11,0.8)]"></span> 
+                    Volume Found
                 </div>
             </div>
         </div>
@@ -135,7 +140,7 @@ const CalendarDropdown = ({
 
 // --- 3. PAGE COMPONENT ---
 const Page = forwardRef((props: any, ref: any) => {
-  const { poem, type, pageNumber, date } = props;
+  const { poem, type, pageNumber, date, words } = props; // Added 'words' prop
   const pageShadow = "shadow-[0_10px_30px_rgba(0,0,0,0.5)]";
 
   const displayDate = date 
@@ -145,13 +150,32 @@ const Page = forwardRef((props: any, ref: any) => {
   if (type === 'cover') {
     return (
       <div ref={ref} className={`h-full w-full bg-[#2b1b17] text-[#d7ccc8] border-r-4 border-[#1a0f0d] flex items-center justify-center p-8 cover-page ${pageShadow}`}>
-        <div className="border-4 border-double border-[#d7ccc8]/30 h-full w-full flex flex-col items-center justify-center text-center p-6">
-           <h1 className="text-5xl font-serif tracking-widest drop-shadow-md mb-4 text-[#d7ccc8]">POEMS</h1>
+        <div className="border-4 border-double border-[#d7ccc8]/30 h-full w-full flex flex-col items-center justify-center text-center p-6 relative">
+           
+           {/* Top Section */}
+           <h1 className="text-5xl font-serif tracking-widest drop-shadow-md mb-4 text-[#d7ccc8] mt-10">POEMS</h1>
            <div className="w-10 h-0.5 bg-[#d7ccc8]/50 mb-4"></div>
            <p className="text-xs tracking-[0.4em] uppercase opacity-70 text-[#d7ccc8]">Volume I</p>
-           <p className="text-[10px] tracking-widest uppercase opacity-50 text-[#d7ccc8] mt-6 border-t border-[#d7ccc8]/20 pt-2">
+           
+           {/* Date */}
+           <p className="text-[10px] tracking-widest uppercase opacity-50 text-[#d7ccc8] mt-6 pt-2">
              {displayDate}
            </p>
+
+           {/* 🛑 NEW: Words of the Day on Cover */}
+           {words && words.length > 0 && (
+             <div className="mt-16 w-3/4 pt-6 border-t border-[#d7ccc8]/20 flex flex-col items-center gap-3">
+                <span className="text-[9px] uppercase tracking-[0.2em] text-[#eaddcf]/40 font-serif italic">Muse</span>
+                <div className="flex flex-wrap justify-center gap-3">
+                    {words.map((w: string, i: number) => (
+                        <span key={i} className="text-xs font-serif italic text-[#d7ccc8]/80 tracking-wide">
+                            {w}
+                        </span>
+                    ))}
+                </div>
+             </div>
+           )}
+
         </div>
       </div>
     );
@@ -281,9 +305,10 @@ export default function Board() {
         .eq('release_date', selectedDate)
         .single();
       
-      if (wordsData?.words?.length > 0) {
+      if (wordsData && wordsData.words && wordsData.words.length > 0) {
           setDailyWords(wordsData.words);
       } else {
+          // Defaults if no words in DB for this date
           setDailyWords(["Soul", "Echo", "Night", "Dance", "Light"]);
       }
       setLoading(false);
@@ -311,11 +336,11 @@ export default function Board() {
   const hasNewer = currentIndex !== -1 && currentIndex > 0;
   
   const displayDate = new Date(selectedDate + 'T12:00:00');
+  const earliestDate = availableDates.length > 0 ? availableDates[availableDates.length - 1] : new Date().toLocaleDateString('en-CA');
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#1c1917] font-sans relative overflow-hidden">
       
-      {/* 1. FIXED BACKGROUND */}
       <div className="fixed inset-0 z-0 pointer-events-none">
          <div className="absolute inset-0 bg-[#2c241b]" 
               style={{ backgroundImage: `url("https://www.transparenttextures.com/patterns/wood-pattern.png")` }}>
@@ -323,14 +348,11 @@ export default function Board() {
          <div className="absolute inset-0 bg-radial-gradient from-transparent to-black/80"></div>
       </div>
 
-      {/* 2. HEADER */}
       <header className="relative z-20 w-full px-8 py-6 flex items-center justify-between bg-black/40 backdrop-blur-md border-b border-white/5 shadow-md">
         
-        {/* LEFT: ARROWS + DATE (Cleaned) */}
+        {/* LEFT NAV */}
         <div className="flex-1 flex items-center gap-6">
             <div className="flex items-center gap-4 relative">
-                
-                {/* ⬅️ PREV ARROW */}
                 <button 
                     onClick={(e) => { e.stopPropagation(); navigateDate('prev'); }} 
                     disabled={!hasOlder}
@@ -346,7 +368,6 @@ export default function Board() {
                     <span className="text-3xl pb-1.5">‹</span>
                 </button>
 
-                {/* DATE DISPLAY (Text Only, No White Box) */}
                 <div className="relative">
                     <button 
                         onClick={(e) => { e.stopPropagation(); setIsCalendarOpen(!isCalendarOpen); }}
@@ -356,28 +377,26 @@ export default function Board() {
                             <h1 className="text-[#eaddcf] font-serif italic text-3xl tracking-wide whitespace-nowrap group-hover:text-white transition-colors">
                                 {displayDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
                             </h1>
-                            {/* Simple Calendar Icon */}
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 text-[#eaddcf]/40 group-hover:text-[#eaddcf] mt-1">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                             </svg>
                         </div>
-                        <p className="text-[10px] uppercase tracking-[0.3em] text-[#eaddcf]/30 mt-1 group-hover:text-[#eaddcf]/60 transition-colors">
-                            {displayDate.getFullYear()} • {poems.length} Entries
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-[#eaddcf]/30 mt-1 group-hover:text-[#eaddcf]/80 transition-colors">
+                            Click to Browse The Archive
                         </p>
                     </button>
 
-                    {/* CALENDAR DROPDOWN */}
                     {isCalendarOpen && (
                         <CalendarDropdown 
                             currentDate={selectedDate} 
                             activeDates={availableDates}
+                            earliestDate={earliestDate}
                             onSelect={setSelectedDate}
                             onClose={() => setIsCalendarOpen(false)}
                         />
                     )}
                 </div>
 
-                {/* ➡️ NEXT ARROW */}
                 <button 
                     onClick={(e) => { e.stopPropagation(); navigateDate('next'); }} 
                     disabled={!hasNewer}
@@ -413,7 +432,7 @@ export default function Board() {
              )}
         </div>
 
-        {/* RIGHT: ACTIONS */}
+        {/* RIGHT: Actions */}
         <div className="flex-1 flex justify-end items-center gap-8">
             <Link 
                 href="/" 
@@ -424,7 +443,7 @@ export default function Board() {
         </div>
       </header>
 
-      {/* 3. BOOK CONTAINER */}
+      {/* BOOK */}
       <main className="relative z-10 flex-grow flex items-center justify-center p-8 overflow-hidden">
         {loading ? (
              <div className="text-[#d7ccc8] font-serif text-2xl animate-pulse">
@@ -450,7 +469,8 @@ export default function Board() {
             useMouseEvents={true}
             showPageCorners={true}
           >
-            <Page key="cover" type="cover" date={selectedDate} />
+            {/* 🛑 Updated Cover to include words */}
+            <Page key="cover" type="cover" date={selectedDate} words={dailyWords} />
             <Page key="inner-left" type="back" /> 
             <Page key="title" type="title" />
             
