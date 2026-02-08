@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useRef, forwardRef } from 'react';
+import React, { useEffect, useState, useRef, forwardRef, Suspense } from 'react'; // 🆕 Added Suspense
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -126,7 +126,6 @@ const Page = forwardRef((props: any, ref: any) => {
     ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : "";
 
-  // 🛑 HELPER: Kill all events aggressively to prevent FlipBook from catching them
   const stopEvent = (e: React.SyntheticEvent) => {
       e.stopPropagation();
       e.preventDefault(); 
@@ -173,7 +172,6 @@ const Page = forwardRef((props: any, ref: any) => {
     return <div ref={ref} className={`${PAGE_CLASS} bg-[#3e2723] shadow-inner border-l-2 border-[#5d4037] page-content ${pageShadow}`}></div>;
   }
 
-  // -- POEM (Right Page) --
   if (type === 'poem') {
       const BOOK_STYLE = {
           paperClass: "bg-[#f9f7f1]", 
@@ -185,8 +183,6 @@ const Page = forwardRef((props: any, ref: any) => {
         <div ref={ref} className={`${PAGE_CLASS} ${pageShadow}`}>
             <div className={`w-full h-full flex flex-col border-r border-gray-100 page-content ${BOOK_STYLE.paperClass} relative`}>
               
-              {/* 🆕 SNAP BUTTON: Top Right */}
-              {/* 🛑 STOP ALL EVENTS (Mouse/Touch/Pointer Up/Down) */}
               <div className="absolute top-6 right-6 z-50"> 
                  <button 
                    onPointerDown={stopEvent} 
@@ -200,13 +196,10 @@ const Page = forwardRef((props: any, ref: any) => {
                        if (!isSnapped) onSnap(poem.id);
                    }}
                    disabled={isSnapped} 
-                   // 🆕 STYLE LOGIC: 
-                   // Unsnapped: Opacity 100, Full Color.
-                   // Snapped: Opacity 40, Grayscale.
                    className={`flex flex-col items-center gap-1 transition-all duration-300 ${
                        isSnapped 
-                       ? 'opacity-40 grayscale cursor-default' // Greyed out ONLY when snapped
-                       : 'opacity-100 hover:scale-110 cursor-pointer group' // Normal otherwise
+                       ? 'opacity-40 grayscale cursor-default' 
+                       : 'opacity-100 hover:scale-110 cursor-pointer group' 
                    }`}
                    title={isSnapped ? "Already snapped!" : "Snap this poem"}
                  >
@@ -239,7 +232,6 @@ const Page = forwardRef((props: any, ref: any) => {
       );
   }
 
-  // -- METADATA (Left Page) --
   return (
     <div ref={ref} className={`${PAGE_CLASS} shadow-inner border-r border-gray-100 page-content ${pageShadow}`}> 
       <div className="w-full h-full flex flex-col p-12">
@@ -274,8 +266,8 @@ const Page = forwardRef((props: any, ref: any) => {
 Page.displayName = 'Page';
 
 
-// --- 4. MAIN BOARD ---
-export default function Board() {
+// --- 4. MAIN BOARD LOGIC (NOW SEPARATED) ---
+function BoardContent() {
   const [poems, setPoems] = useState<any[]>([]);
   const [dailyWords, setDailyWords] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,7 +280,7 @@ export default function Board() {
   const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest');
   const [snappedIds, setSnappedIds] = useState<string[]>([]);
 
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams(); // ⚠️ This caused the error before
   const targetPoemId = searchParams.get('id');
 
   const bookRef = useRef<any>(null);
@@ -437,7 +429,6 @@ export default function Board() {
             </div>
         </div>
         
-        {/* 🆕 IMPROVED SORT TOGGLE UI (Spaced & High Contrast) */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
              <div className="flex bg-[#1c1917] rounded-lg p-1 border border-[#eaddcf]/20 shadow-md gap-3">
                  <button onClick={() => setSortBy('latest')} className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${sortBy === 'latest' ? 'bg-[#eaddcf] text-[#1c1917] shadow-sm' : 'text-[#eaddcf]/80 hover:text-[#eaddcf] bg-transparent'}`}>Newest</button>
@@ -511,5 +502,14 @@ export default function Board() {
       </main>
       <style jsx global>{` .page-content { background-color: #f9f7f1 !important; } .cover-page { background-color: #2b1b17 !important; } .react-pageflip { background-color: transparent !important; } .bg-radial-gradient { background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.8) 100%); } ::-webkit-scrollbar { width: 0px; background: transparent; } `}</style>
     </div>
+  );
+}
+
+// 🆕 DEFAULT EXPORT WRAPPED IN SUSPENSE
+export default function BoardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#1c1917] flex items-center justify-center text-[#eaddcf] font-serif animate-pulse">Loading The Archive...</div>}>
+      <BoardContent />
+    </Suspense>
   );
 }
