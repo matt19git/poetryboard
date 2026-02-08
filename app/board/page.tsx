@@ -1,12 +1,15 @@
 "use client";
-import React, { useEffect, useState, useRef, forwardRef, Suspense } from 'react'; // 🆕 Added Suspense
+import React, { useEffect, useState, useRef, forwardRef, Suspense } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
+import dynamicClient from 'next/dynamic'; // Renamed to avoid conflict
 import { useSearchParams } from 'next/navigation';
 import confetti from 'canvas-confetti';
 
-const HTMLFlipBook = dynamic(
+// 🛑 MAGIC FIX: This tells Vercel "Don't build this page in advance, build it live."
+export const dynamic = 'force-dynamic';
+
+const HTMLFlipBook = dynamicClient(
   () => import('react-pageflip').then((mod) => mod.default), 
   { 
     ssr: false,
@@ -266,7 +269,7 @@ const Page = forwardRef((props: any, ref: any) => {
 Page.displayName = 'Page';
 
 
-// --- 4. MAIN BOARD LOGIC (NOW SEPARATED) ---
+// --- 4. MAIN BOARD LOGIC (WRAPPED) ---
 function BoardContent() {
   const [poems, setPoems] = useState<any[]>([]);
   const [dailyWords, setDailyWords] = useState<string[]>([]);
@@ -280,7 +283,7 @@ function BoardContent() {
   const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest');
   const [snappedIds, setSnappedIds] = useState<string[]>([]);
 
-  const searchParams = useSearchParams(); // ⚠️ This caused the error before
+  const searchParams = useSearchParams();
   const targetPoemId = searchParams.get('id');
 
   const bookRef = useRef<any>(null);
@@ -505,7 +508,7 @@ function BoardContent() {
   );
 }
 
-// 🆕 DEFAULT EXPORT WRAPPED IN SUSPENSE
+// 🆕 EXPORT DEFAULT WITH SUSPENSE BOUNDARY
 export default function BoardPage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-[#1c1917] flex items-center justify-center text-[#eaddcf] font-serif animate-pulse">Loading The Archive...</div>}>
