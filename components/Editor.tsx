@@ -6,13 +6,42 @@ import Link from 'next/link';
 import getCaretCoordinates from 'textarea-caret';
 
 // ------------------------------------------------------------------
+// 🛠️ TYPE DEFINITIONS
+// ------------------------------------------------------------------
+interface Theme {
+  id: string;
+  name: string;
+  bgHex: string;
+  bgClass: string;
+  uiHex: string;
+  controlsClass: string;
+  paperClass: string;
+  paperStyle?: React.CSSProperties; 
+  fontClass: string;
+  inkHex: string;
+  placeholder: string;
+  sound: string;
+  isContinuousSound?: boolean;
+  restartOnNewline?: boolean;
+  volumeBoost?: number;
+  hasTypewriterEffect?: boolean;
+  isTerminal?: boolean;
+  imageConfig?: {
+    src: string;
+    tipOffset?: { x: number; y: number };
+    className: string;
+    type: 'cursor' | 'screen';
+  };
+}
+
+// ------------------------------------------------------------------
 // 📏 DIMENSIONS
 // ------------------------------------------------------------------
 const PAPER_W = '500px';
-const PAPER_H = '700px'; 
+const PAPER_H = '600px'; 
 const CONTENT_PADDING = 'p-12';
 
-const THEMES = [
+const THEMES: Theme[] = [
   {
     id: 'quill',
     name: 'Quill',
@@ -37,9 +66,8 @@ const THEMES = [
     bgClass: "bg-slate-300",
     uiHex: "#475569", 
     controlsClass: "bg-white text-slate-600 border border-slate-300 hover:bg-slate-50",
-    paperClass: "bg-[#fef9c3] shadow-xl border-t-[40px] border-slate-800 rounded-b-lg mx-auto",
-    paperStyle: { backgroundImage: "linear-gradient(transparent 2.9rem, #94a3b8 2.9rem)", backgroundSize: "100% 3rem", backgroundAttachment: "local" },
-    fontClass: "font-handwriting text-2xl leading-[3rem]", 
+    paperClass: "bg-[#fef9c3] shadow-xl border-t-[25px] border-slate-800 rounded-b-lg mx-auto",
+    fontClass: "font-handwriting text-xl leading-relaxed", 
     inkHex: "#1e3a8a", 
     placeholder: "Jot something down...",
     sound: '/sounds/pencilsound.mp3',
@@ -85,16 +113,22 @@ const THEMES = [
 export default function Editor() {
   const [poem, setPoem] = useState("");
   const [author, setAuthor] = useState("");
-  const [currentTheme, setCurrentTheme] = useState(THEMES[0]);
+  const [currentTheme, setCurrentTheme] = useState<Theme>(THEMES[0]);
   const [dailyWords, setDailyWords] = useState<string[]>([]);
   const [usedWords, setUsedWords] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  
+  // 🆕 Limits & State
+  const [canSubmit, setCanSubmit] = useState(true);
+  const [submittedId, setSubmittedId] = useState<string | null>(null);
+  const [shareUrl, setShareUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
   const [hasStartedTyping, setHasStartedTyping] = useState(false);
   const [masterVolume, setMasterVolume] = useState(0.5);
   const [isFull, setIsFull] = useState(false);
 
-  // Refs for managing cursor and state
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cursorImageRef = useRef<HTMLImageElement>(null);
   const dingRef = useRef<HTMLAudioElement | null>(null);
@@ -102,10 +136,16 @@ export default function Editor() {
   const lastInteractionTime = useRef<number>(0);
   const checkInterval = useRef<NodeJS.Timeout | null>(null);
   
-  // Store cursor position to restore it if input is rejected
   const cursorRef = useRef<number | null>(null);
 
   useEffect(() => {
+    // 🆕 Check Daily Limit Logic
+    const lastDate = localStorage.getItem('last_submission_date');
+    const today = new Date().toLocaleDateString('en-CA');
+    if (lastDate === today) {
+        setCanSubmit(false);
+    }
+
     const savedVol = localStorage.getItem('poem-volume');
     if (savedVol !== null) setMasterVolume(parseFloat(savedVol));
     
@@ -177,41 +217,23 @@ export default function Editor() {
     setUsedWords(found);
   }, [poem, dailyWords]);
 
-  // 🛑 CURSOR RESTORATION LOGIC
-  // If React rejects an update (because we didn't setPoem), the DOM might still move the cursor to the end.
-  // This layout effect forces it back to where we wanted it.
   useLayoutEffect(() => {
     if (cursorRef.current !== null && textareaRef.current) {
       textareaRef.current.setSelectionRange(cursorRef.current, cursorRef.current);
-      cursorRef.current = null; // Reset
+      cursorRef.current = null; 
     }
-  }, [poem, isFull]); // Run when poem updates or we hit full state
+  }, [poem, isFull]);
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newVal = e.target.value;
     const t = e.target;
-    
-    // Save where the cursor SHOULD be (the browser moved it forward, so if we reject, we want it back - 1)
-    // Actually, if we reject, we want to put it back to where it was *before* the input.
-    // Since input event happens *after* change, selectionStart is currently at the new position.
-    // If we reject, we basically want to revert.
     const currentCaret = t.selectionStart;
 
-    // 🛑 HARD LIMIT CHECK
-    // If adding text makes it overflow
     if (newVal.length > poem.length) {
-        // Tolerance +1px
         if (t.scrollHeight > t.clientHeight + 1) {
             setIsFull(true);
-            
-            // 🛑 REJECT INPUT:
-            // Store the cursor position minus the character they just tried to type
-            // (approximate logic, usually just keeping it where it was is fine)
             cursorRef.current = currentCaret - 1; 
-            
-            // Force re-render to strip the invalid character from the DOM
-            // We do this by toggling a dummy state or relying on React's value binding
-            t.value = poem; // Manually reset value immediately to prevent jitter
+            t.value = poem; 
             return;
         }
     }
@@ -253,9 +275,6 @@ export default function Editor() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // 🟢 No blocking logic here anymore. 
-    // We let the user press keys, handleInput decides if the result is valid.
-    
     if (hasStartedTyping) requestAnimationFrame(updateCursorPosition);
     lastInteractionTime.current = Date.now();
 
@@ -280,12 +299,41 @@ export default function Editor() {
   const allWordsUsed = dailyWords.length > 0 && usedWords.length === dailyWords.length;
 
   const handleSnap = async () => {
-    if (!allWordsUsed) return;
+    if (!allWordsUsed || !canSubmit) return; // 🛑 Block submit if limited
+    
     setIsSubmitting(true);
     confetti({ particleCount: 150, spread: 70 });
-    const { error } = await supabase.from('poems').insert([{ content: poem, author_name: author || "Anonymous", word_bank: dailyWords, style_data: currentTheme }]);
-    if (!error) setHasSubmitted(true);
+    
+    const { data, error } = await supabase
+        .from('poems')
+        .insert([{ 
+            content: poem, 
+            author_name: author || "Anonymous", 
+            word_bank: dailyWords, 
+            style_data: currentTheme 
+        }])
+        .select();
+
+    if (!error && data && data.length > 0) {
+        // 🆕 Set Local Limit on Success
+        const today = new Date().toLocaleDateString('en-CA');
+        localStorage.setItem('last_submission_date', today);
+        setCanSubmit(false);
+
+        const newId = String(data[0].id);
+        setSubmittedId(newId);
+        
+        const url = `${window.location.origin}/board?id=${newId}`;
+        setShareUrl(url);
+        setHasSubmitted(true);
+    }
     setIsSubmitting(false);
+  };
+
+  const copyToClipboard = () => {
+      navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
   };
 
   const getWordStyle = (word: string, isUsed: boolean) => {
@@ -295,10 +343,59 @@ export default function Editor() {
 
   if (hasSubmitted) {
     return (
-      <div className={`min-h-screen flex items-center justify-center transition-colors duration-700 ${currentTheme.bgClass}`} style={{ backgroundColor: currentTheme.bgHex }}>
-        <div className={`text-center space-y-6 p-12 rounded-xl shadow-2xl w-[500px] mx-auto ${currentTheme.isTerminal ? 'border-2 border-green-500 bg-black' : 'bg-white'}`}>
-          <h2 className={`text-4xl font-bold ${currentTheme.fontClass}`} style={{ color: currentTheme.inkHex }}>Preserved. 🫰</h2>
-          <Link href="/board" className={`block w-full py-4 font-bold uppercase tracking-widest rounded-lg hover:scale-105 transition-transform ${currentTheme.controlsClass}`}>View the Board</Link>
+      <div className={`min-h-screen flex flex-col items-center justify-center p-6 transition-colors duration-700 ${currentTheme.bgClass}`} style={{ backgroundColor: currentTheme.bgHex }}>
+        
+        {/* Card Container */}
+        <div className="bg-[#f0e6d2] p-8 w-full max-w-md shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-[#d6c4b0] relative overflow-hidden rotate-1 transform hover:rotate-0 transition-transform duration-500">
+            
+            {/* Stamp Effect */}
+            <div className="absolute top-4 right-4 w-24 h-24 border-4 border-red-800/20 rounded-full flex items-center justify-center -rotate-12 pointer-events-none">
+                <span className="text-red-800/20 font-bold uppercase text-xs tracking-widest text-center">Received<br/>Library<br/>Archive</span>
+            </div>
+
+            {/* Header */}
+            <div className="border-b-2 border-black/10 pb-4 mb-6 text-center">
+                <h2 className="text-2xl font-serif font-bold text-gray-800 tracking-widest uppercase">Submission Receipt</h2>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mt-1">Poetry Snaps Collection</p>
+            </div>
+
+            {/* Details */}
+            <div className="space-y-4 font-mono text-sm text-gray-700">
+                <div className="flex justify-between border-b border-black/5 pb-1">
+                    <span className="opacity-50">DATE</span>
+                    <span>{new Date().toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between border-b border-black/5 pb-1">
+                    <span className="opacity-50">AUTHOR</span>
+                    <span className="font-bold">{author || "Anonymous"}</span>
+                </div>
+                <div className="flex justify-between border-b border-black/5 pb-1">
+                    <span className="opacity-50">WORD BANK</span>
+                    <span className="text-right max-w-[150px] truncate">{dailyWords.join(", ")}</span>
+                </div>
+                <div className="flex justify-between border-b border-black/5 pb-1">
+                    <span className="opacity-50">ID</span>
+                    <span>{String(submittedId).slice(0,8)}...</span>
+                </div>
+            </div>
+
+            {/* Share Section */}
+            <div className="mt-8 bg-white/50 p-4 rounded border border-black/5">
+                <p className="text-[10px] uppercase tracking-widest text-gray-500 mb-2 text-center">Permanent Accession Link</p>
+                <div className="flex gap-2">
+                    <input type="text" readOnly value={shareUrl} className="flex-1 bg-white border border-gray-300 rounded px-2 py-1 text-xs text-gray-600 font-mono outline-none" />
+                    <button onClick={copyToClipboard} className="bg-gray-800 text-white px-3 py-1 rounded text-xs font-bold uppercase tracking-wide hover:bg-black transition-colors">
+                        {copied ? "Copied!" : "Copy"}
+                    </button>
+                </div>
+            </div>
+
+            {/* Footer Action */}
+            <div className="mt-8 pt-6 border-t-2 border-black/10 text-center">
+                <Link href={`/board?id=${submittedId}`} className="inline-block w-full py-3 bg-[#2c241b] text-[#eaddcf] font-bold uppercase tracking-widest text-xs rounded hover:scale-[1.02] transition-transform shadow-lg">
+                    Verify in Book →
+                </Link>
+            </div>
         </div>
       </div>
     );
@@ -341,42 +438,53 @@ export default function Editor() {
       <main className="flex-1 overflow-y-auto relative w-full flex justify-center perspective-1000 pb-20 px-4">
         <div className="w-full max-w-5xl flex flex-col items-center min-h-full">
             
-            {/* PAPER */}
+            {/* PAPER: FIXED SIZE */}
             <div className={`relative transition-all duration-500 flex flex-col overflow-hidden ${currentTheme.paperClass}`} 
                  style={{ width: PAPER_W, height: PAPER_H, ...currentTheme.paperStyle }}>
               
-              {/* TEXTAREA */}
+              {/* TEXTAREA: Background styles moved HERE to scroll with text */}
               <textarea
                 ref={textareaRef}
-                className={`w-full flex-1 bg-transparent border-none outline-none resize-none ${CONTENT_PADDING} ${currentTheme.fontClass} placeholder-opacity-40 overflow-y-auto`}
+                disabled={!canSubmit} // 🛑 Lock Input if Limited
+                className={`w-full flex-1 bg-transparent border-none outline-none resize-none ${CONTENT_PADDING} ${currentTheme.fontClass} placeholder-opacity-40 overflow-y-auto ${!canSubmit ? 'opacity-50 cursor-not-allowed' : ''}`}
                 style={{ 
                     color: currentTheme.inkHex, 
                     caretColor: currentTheme.inkHex,
                     scrollbarWidth: 'none', 
-                    msOverflowStyle: 'none' 
+                    msOverflowStyle: 'none',
+                    ...currentTheme.paperStyle 
                 }}
-                placeholder={currentTheme.placeholder}
+                placeholder={canSubmit ? currentTheme.placeholder : "Poem limit reached for today."}
                 value={poem}
                 onChange={handleInput} 
                 onKeyDown={handleKeyDown}
-                onClick={() => { if(!hasStartedTyping) setHasStartedTyping(true); setTimeout(() => updateCursorPosition(), 10); }}
+                onClick={() => { if(!hasStartedTyping && canSubmit) setHasStartedTyping(true); setTimeout(() => updateCursorPosition(), 10); }}
                 onScroll={updateCursorPosition}
                 spellCheck={false}
               />
               <style jsx>{` textarea::-webkit-scrollbar { display: none; } `}</style>
 
-              {/* FOOTER */}
-              <div className={`flex-none ${CONTENT_PADDING} pt-0 flex flex-col gap-6 z-10 bg-transparent`}>
+              {/* FOOTER - FIXED LAYOUT (NO GLITCH) */}
+              <div className={`flex-none ${CONTENT_PADDING} pt-0 flex flex-col gap-2 z-10 bg-transparent`}>
                 
-                {/* 🛑 WARNING MESSAGE IN FOOTER */}
-                {isFull && (
-                    <p className="text-red-500 text-xs font-bold text-center uppercase tracking-widest animate-pulse">
-                        Page limit reached
-                    </p>
-                )}
+                {/* 🛑 RESERVED WARNING SPACE */}
+                <div className="h-6 flex items-center justify-center min-h-[1.5rem]"> 
+                    {isFull && (
+                        <span className="text-red-500 text-xs font-bold uppercase tracking-widest animate-pulse">
+                            Page limit reached
+                        </span>
+                    )}
+                </div>
 
-                <input type="text" placeholder={currentTheme.isTerminal ? "AUTHOR_ID_UNKNOWN" : "— Sign your name"} value={author} onChange={(e) => setAuthor(e.target.value)} style={{ color: currentTheme.inkHex }} className={`bg-transparent border-b border-dashed border-current outline-none text-center italic opacity-60 pb-2 ${currentTheme.fontClass}`} />
-                <button onClick={handleSnap} disabled={!allWordsUsed || isSubmitting} className={`w-full py-4 font-bold transition-all uppercase tracking-widest shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none ${currentTheme.controlsClass}`}>{allWordsUsed ? "Submit to Board 🫰" : "Complete Word Bank"}</button>
+                <input type="text" placeholder={currentTheme.isTerminal ? "AUTHOR_ID_UNKNOWN" : "— Sign your name"} value={author} onChange={(e) => setAuthor(e.target.value)} disabled={!canSubmit} style={{ color: currentTheme.inkHex }} className={`bg-transparent border-b border-dashed border-current outline-none text-center italic opacity-60 pb-2 ${currentTheme.fontClass} ${!canSubmit ? 'cursor-not-allowed' : ''}`} />
+                
+                <button 
+                    onClick={handleSnap} 
+                    disabled={!allWordsUsed || isSubmitting || !canSubmit} 
+                    className={`w-full py-4 font-bold transition-all uppercase tracking-widest shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none ${currentTheme.controlsClass}`}
+                >
+                    {!canSubmit ? "Come back tomorrow 🌙" : (allWordsUsed ? "Submit to Board 🫰" : "Complete Word Bank")}
+                </button>
               </div>
             </div>
 

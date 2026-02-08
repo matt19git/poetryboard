@@ -3,6 +3,8 @@ import React, { useEffect, useState, useRef, forwardRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
+import confetti from 'canvas-confetti';
 
 const HTMLFlipBook = dynamic(
   () => import('react-pageflip').then((mod) => mod.default), 
@@ -116,17 +118,20 @@ const CalendarDropdown = ({
 
 // --- 3. PAGE COMPONENT ---
 const Page = forwardRef((props: any, ref: any) => {
-  const { poem, type, pageNumber, date, words } = props;
+  const { poem, type, pageNumber, date, words, onSnap, isSnapped } = props;
   const pageShadow = "shadow-[0_10px_30px_rgba(0,0,0,0.5)]";
-  
-  // 🛑 RIGID CONTAINER: STRICT 500x700
-  const PAGE_CLASS = `w-[500px] h-[700px] relative overflow-hidden bg-[#f9f7f1]`;
+  const PAGE_CLASS = `w-[500px] h-[600px] overflow-hidden bg-[#f9f7f1]`;
 
   const displayDate = date 
     ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : "";
 
-  // -- COVER --
+  // 🛑 HELPER: Kill all events aggressively to prevent FlipBook from catching them
+  const stopEvent = (e: React.SyntheticEvent) => {
+      e.stopPropagation();
+      e.preventDefault(); 
+  };
+
   if (type === 'cover') {
     return (
       <div ref={ref} className={`${PAGE_CLASS} bg-[#2b1b17] border-r-4 border-[#1a0f0d] flex items-center justify-center p-8 cover-page ${pageShadow}`}>
@@ -154,7 +159,6 @@ const Page = forwardRef((props: any, ref: any) => {
     );
   }
 
-  // -- TITLE --
   if (type === 'title') {
     return (
       <div ref={ref} className={`${PAGE_CLASS} p-10 flex flex-col items-center justify-center text-center shadow-inner border-r border-gray-200 page-content ${pageShadow}`}> 
@@ -165,65 +169,80 @@ const Page = forwardRef((props: any, ref: any) => {
     );
   }
 
-  // -- BACK --
   if (type === 'back') {
     return <div ref={ref} className={`${PAGE_CLASS} bg-[#3e2723] shadow-inner border-l-2 border-[#5d4037] page-content ${pageShadow}`}></div>;
   }
 
-  // -- POEM --
+  // -- POEM (Right Page) --
   if (type === 'poem') {
-      // 🛑 IGNORE EDITOR THEME: We enforce a standard "Book Style" here.
-      // This ensures every page in the book looks uniform.
       const BOOK_STYLE = {
-          paperClass: "bg-[#f9f7f1]", // Standard off-white paper
-          fontClass: "font-serif text-lg leading-loose", // Standard serif font
-          inkHex: "#1c1917" // Standard ink color
+          paperClass: "bg-[#f9f7f1]", 
+          fontClass: "font-serif text-lg leading-loose", 
+          inkHex: "#1c1917" 
       };
 
       return (
         <div ref={ref} className={`${PAGE_CLASS} ${pageShadow}`}>
-            {/* 🛑 INNER CONTENT: Clean Book Layout */}
-            <div className={`w-full h-full border-r border-gray-100 page-content ${BOOK_STYLE.paperClass}`}
-                 style={{ 
-                     // No dynamic styles from DB here. Just pure CSS classes.
-                     width: '100%', 
-                     height: '100%', 
-                     minHeight: '0', 
-                     maxHeight: 'none', 
-                     border: 'none', 
-                     borderRadius: '0',
-                     boxSizing: 'border-box'
-                 }}>
+            <div className={`w-full h-full flex flex-col border-r border-gray-100 page-content ${BOOK_STYLE.paperClass} relative`}>
               
-              <textarea
-                readOnly
-                value={poem.content}
-                className={`w-full h-full bg-transparent border-none outline-none resize-none p-12 pb-20 ${BOOK_STYLE.fontClass} overflow-hidden`}
-                style={{ 
-                    color: BOOK_STYLE.inkHex, 
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none'
-                }}
-              />
-
-              <div className="absolute bottom-12 left-0 right-0 text-center z-10">
-                 <span className={`text-sm italic opacity-60 ${BOOK_STYLE.fontClass}`} style={{ color: BOOK_STYLE.inkHex }}>
-                   — {poem.author_name}
-                 </span>
+              {/* 🆕 SNAP BUTTON: Top Right */}
+              {/* 🛑 STOP ALL EVENTS (Mouse/Touch/Pointer Up/Down) */}
+              <div className="absolute top-6 right-6 z-50"> 
+                 <button 
+                   onPointerDown={stopEvent} 
+                   onPointerUp={stopEvent} 
+                   onMouseDown={stopEvent}
+                   onMouseUp={stopEvent}
+                   onTouchStart={stopEvent}
+                   onTouchEnd={stopEvent}
+                   onClick={(e) => {
+                       stopEvent(e);
+                       if (!isSnapped) onSnap(poem.id);
+                   }}
+                   disabled={isSnapped} 
+                   // 🆕 STYLE LOGIC: 
+                   // Unsnapped: Opacity 100, Full Color.
+                   // Snapped: Opacity 40, Grayscale.
+                   className={`flex flex-col items-center gap-1 transition-all duration-300 ${
+                       isSnapped 
+                       ? 'opacity-40 grayscale cursor-default' // Greyed out ONLY when snapped
+                       : 'opacity-100 hover:scale-110 cursor-pointer group' // Normal otherwise
+                   }`}
+                   title={isSnapped ? "Already snapped!" : "Snap this poem"}
+                 >
+                     <span className={`text-2xl drop-shadow-sm ${!isSnapped && 'group-hover:animate-bounce'}`}>
+                        🫰
+                     </span>
+                     <span className={`text-[10px] font-mono font-bold ${isSnapped ? 'text-gray-500' : 'text-gray-400 group-hover:text-black'}`}>
+                         {poem.snaps_count || 0}
+                     </span>
+                 </button>
               </div>
+
+              <div className="h-16 flex-none w-full"></div>
               
-              <div className="absolute bottom-4 right-6 text-xs text-gray-400 font-serif z-10">{pageNumber}</div>
-              {/* Optional: Subtle inner shadow for book effect */}
-              <div className={`absolute top-0 bottom-0 w-12 pointer-events-none opacity-10 left-0 bg-gradient-to-r from-black to-transparent z-0`}></div>
+              <div className="flex-1 w-full flex items-center justify-center px-12">
+                  <div className={`w-full whitespace-pre-wrap text-center ${BOOK_STYLE.fontClass}`}
+                       style={{ color: BOOK_STYLE.inkHex }}>
+                      {poem.content}
+                  </div>
+              </div>
+
+              <div className="h-16 flex-none w-full flex items-center justify-center">
+                  <span className="text-xs text-gray-400 font-serif">
+                      {pageNumber}
+                  </span>
+              </div>
             </div>
+            <div className="absolute inset-y-0 left-0 w-8 pointer-events-none bg-gradient-to-r from-black/10 to-transparent z-10"></div>
         </div>
       );
   }
 
-  // -- METADATA --
+  // -- METADATA (Left Page) --
   return (
-    <div ref={ref} className={`${PAGE_CLASS} relative shadow-inner border-r border-gray-100 page-content ${pageShadow}`}> 
-      <div className="h-full p-12 flex flex-col justify-start items-start">
+    <div ref={ref} className={`${PAGE_CLASS} shadow-inner border-r border-gray-100 page-content ${pageShadow}`}> 
+      <div className="w-full h-full flex flex-col p-12">
           <div className="w-full border-b border-gray-300 pb-4 mb-6 mt-2">
             <h2 className="text-2xl font-serif font-bold text-gray-900 m-0 p-0">
               {formatDate(poem.created_at)}
@@ -232,20 +251,23 @@ const Page = forwardRef((props: any, ref: any) => {
               Penned by {poem.author_name || "Anonymous"}
             </div>
           </div>
-        <div className="w-full flex-1 text-left">
+          <div className="flex-1 w-full">
              <div className="flex flex-col gap-4 opacity-10 mt-10">
                 <div className="w-8 h-8 rounded-full border border-black"></div>
                 <div className="h-px w-24 bg-black"></div>
              </div>
-        </div>
-        <div className="w-full mt-auto pt-6 flex justify-between items-end text-gray-400 border-t border-transparent">
-           <span className="text-[10px] font-mono uppercase tracking-widest">
+          </div>
+        
+        <div className="w-full h-12 flex items-end justify-between border-t border-transparent relative">
+           <span className="text-[10px] font-mono uppercase tracking-widest text-gray-400 absolute left-0 bottom-1">
              ID {String(poem.id).slice(0,4)}
            </span>
-           <span className="text-xs font-serif">{pageNumber}</span>
+           <div className="w-full text-center">
+                <span className="text-xs font-serif text-gray-400">{pageNumber}</span>
+           </div>
         </div>
       </div>
-      <div className={`absolute top-0 bottom-0 w-12 pointer-events-none opacity-10 right-0 bg-gradient-to-l from-black to-transparent`}></div>
+      <div className="absolute inset-y-0 right-0 w-8 pointer-events-none bg-gradient-to-l from-black/10 to-transparent z-10"></div>
     </div>
   );
 });
@@ -257,12 +279,51 @@ export default function Board() {
   const [poems, setPoems] = useState<any[]>([]);
   const [dailyWords, setDailyWords] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bookReady, setBookReady] = useState(false);
   
   const [availableDates, setAvailableDates] = useState<string[]>([]); 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  
+  const [sortBy, setSortBy] = useState<'latest' | 'popular'>('latest');
+  const [snappedIds, setSnappedIds] = useState<string[]>([]);
+
+  const searchParams = useSearchParams();
+  const targetPoemId = searchParams.get('id');
 
   const bookRef = useRef<any>(null);
+
+  useEffect(() => {
+      const localSnaps = JSON.parse(localStorage.getItem('snapped_poems') || '[]');
+      setSnappedIds(localSnaps);
+  }, []);
+
+  const handleSnap = async (poemId: string) => {
+      const localSnaps = JSON.parse(localStorage.getItem('snapped_poems') || '[]');
+      if (localSnaps.includes(String(poemId))) return; 
+
+      const rect = bookRef.current?.dom?.getBoundingClientRect(); 
+      confetti({
+          particleCount: 40,
+          spread: 50,
+          origin: { y: 0.8 }, 
+          colors: ['#000000', '#eaddcf']
+      });
+
+      setPoems(current => current.map(p => {
+          if (p.id === poemId) {
+              return { ...p, snaps_count: (p.snaps_count || 0) + 1 };
+          }
+          return p;
+      }));
+
+      const newSnaps = [...localSnaps, String(poemId)];
+      localStorage.setItem('snapped_poems', JSON.stringify(newSnaps));
+      setSnappedIds(newSnaps);
+
+      const { error } = await supabase.rpc('increment_snaps', { row_id: poemId });
+      if (error) console.error("Snap failed:", error);
+  };
 
   useEffect(() => {
     document.body.style.backgroundColor = '#1c1917';
@@ -275,6 +336,16 @@ export default function Board() {
             if (!uniqueDates.includes(today)) uniqueDates.unshift(today);
             uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
             setAvailableDates(uniqueDates);
+            
+            if (targetPoemId) {
+                const { data: targetPoem } = await supabase.from('poems').select('created_at').eq('id', targetPoemId).single();
+                if (targetPoem) {
+                    const targetDate = new Date(targetPoem.created_at).toLocaleDateString('en-CA');
+                    setSelectedDate(targetDate);
+                    return; 
+                }
+            }
+
             if (!uniqueDates.includes(selectedDate)) setSelectedDate(uniqueDates[0]);
         }
     };
@@ -285,7 +356,7 @@ export default function Board() {
         document.body.style.backgroundColor = ''; 
         window.removeEventListener('click', handleGlobalClick);
     };
-  }, []);
+  }, [targetPoemId]); 
 
   useEffect(() => {
     setLoading(true);
@@ -293,15 +364,40 @@ export default function Board() {
       const [year, month, day] = selectedDate.split('-').map(Number);
       const start = new Date(year, month - 1, day, 0, 0, 0); 
       const end = new Date(year, month - 1, day, 23, 59, 59);
-      const { data: poemsData } = await supabase.from('poems').select('*').gte('created_at', start.toISOString()).lte('created_at', end.toISOString()).order('created_at', { ascending: false });
+      
+      let query = supabase.from('poems').select('*').gte('created_at', start.toISOString()).lte('created_at', end.toISOString());
+      
+      if (sortBy === 'latest') {
+          query = query.order('created_at', { ascending: false });
+      } else {
+          query = query.order('snaps_count', { ascending: false });
+      }
+
+      const { data: poemsData } = await query;
       setPoems(poemsData || []);
+      
       const { data: wordsData } = await supabase.from('daily_challenges').select('words').eq('release_date', selectedDate).single();
       if (wordsData && wordsData.words && wordsData.words.length > 0) setDailyWords(wordsData.words);
       else setDailyWords(["Soul", "Echo", "Night", "Dance", "Light"]);
+      
       setLoading(false);
     };
     if (selectedDate) fetchData();
-  }, [selectedDate]);
+  }, [selectedDate, sortBy]); 
+
+  useEffect(() => {
+      if (bookReady && !loading && poems.length > 0 && targetPoemId && bookRef.current) {
+          const index = poems.findIndex(p => String(p.id) === String(targetPoemId));
+          if (index !== -1) {
+              const targetPage = 4 + (index * 2);
+              setTimeout(() => {
+                  try {
+                    bookRef.current.pageFlip().flip(targetPage);
+                  } catch(e) { console.log("Flip error", e); }
+              }, 300);
+          }
+      }
+  }, [bookReady, loading, poems, targetPoemId]);
 
   const navigateDate = (direction: 'prev' | 'next') => {
       const currentIndex = availableDates.indexOf(selectedDate);
@@ -340,9 +436,17 @@ export default function Board() {
                 <button onClick={(e) => { e.stopPropagation(); navigateDate('next'); }} disabled={!hasNewer} className={`flex items-center justify-center w-12 h-12 rounded-full border border-[#eaddcf]/30 transition-all duration-300 bg-transparent outline-none ${!hasNewer ? 'text-white/10 cursor-not-allowed border-transparent' : 'text-[#eaddcf] hover:bg-[#eaddcf] hover:text-[#1c1917] hover:scale-105 hover:border-transparent'}`} title="Next Date"><span className="text-3xl pb-1.5">›</span></button>
             </div>
         </div>
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-             {dailyWords.length > 0 && (<><span className="text-[10px] text-[#eaddcf]/60 uppercase tracking-widest font-serif italic">Muse for this day:</span><div className="flex gap-2">{dailyWords.map(w => (<span key={w} className="text-[10px] text-[#eaddcf] border border-[#eaddcf]/30 px-3 py-1 rounded-full uppercase tracking-wider opacity-90 bg-black/30">{w}</span>))}</div></>)}
+        
+        {/* 🆕 IMPROVED SORT TOGGLE UI (Spaced & High Contrast) */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
+             <div className="flex bg-[#1c1917] rounded-lg p-1 border border-[#eaddcf]/20 shadow-md gap-3">
+                 <button onClick={() => setSortBy('latest')} className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${sortBy === 'latest' ? 'bg-[#eaddcf] text-[#1c1917] shadow-sm' : 'text-[#eaddcf]/80 hover:text-[#eaddcf] bg-transparent'}`}>Newest</button>
+                 <button onClick={() => setSortBy('popular')} className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${sortBy === 'popular' ? 'bg-[#eaddcf] text-[#1c1917] shadow-sm' : 'text-[#eaddcf]/80 hover:text-[#eaddcf] bg-transparent'}`}>Most Snapped</button>
+             </div>
+
+             {dailyWords.length > 0 && (<div className="flex gap-2 opacity-70">{dailyWords.map(w => (<span key={w} className="text-[10px] text-[#eaddcf] border border-[#eaddcf]/30 px-3 py-1 rounded-full uppercase tracking-wider bg-black/30">{w}</span>))}</div>)}
         </div>
+
         <div className="flex-1 flex justify-end items-center gap-8">
             <Link href="/" className="bg-[#f9f7f1] text-[#2c241b] px-8 py-3 rounded-sm shadow-lg border border-[#d7ccc8] font-serif font-bold text-xs tracking-widest hover:bg-white hover:scale-105 transition-all">+ WRITE POEM</Link>
         </div>
@@ -353,15 +457,45 @@ export default function Board() {
              <div className="text-[#d7ccc8] font-serif text-2xl animate-pulse">Retrieving {displayDate.toLocaleDateString()}...</div>
         ) : (
           /* @ts-ignore */
-          <HTMLFlipBook width={500} height={700} size="fixed" minWidth={300} maxWidth={1000} minHeight={400} maxHeight={1200} maxShadowOpacity={0.5} showCover={true} mobileScrollSupport={true} className="" ref={bookRef} flippingTime={1000} clickEventForward={true} useMouseEvents={true} showPageCorners={true}>
+          <HTMLFlipBook 
+            width={500} 
+            height={600} 
+            size="fixed" 
+            minWidth={300} 
+            maxWidth={1000} 
+            minHeight={400} 
+            maxHeight={1200} 
+            maxShadowOpacity={0.5} 
+            showCover={true} 
+            mobileScrollSupport={true} 
+            className="" 
+            ref={bookRef} 
+            flippingTime={1000} 
+            clickEventForward={true} 
+            useMouseEvents={true} 
+            showPageCorners={true}
+            onInit={() => setBookReady(true)}
+          >
             <Page key="cover" type="cover" date={selectedDate} words={dailyWords} />
             <Page key="inner-left" type="back" /> 
             <Page key="title" type="title" />
             
             {poems.length > 0 ? (
                 poems.flatMap((poem, index) => [
-                    <Page key={`meta-${poem.id}`} poem={poem} type="metadata" pageNumber={(index * 2) + 1} />,
-                    <Page key={`content-${poem.id}`} poem={poem} type="poem" pageNumber={(index * 2) + 2} />
+                    <Page 
+                        key={`meta-${poem.id}`} 
+                        poem={poem} 
+                        type="metadata" 
+                        pageNumber={(index * 2) + 1} 
+                    />,
+                    <Page 
+                        key={`content-${poem.id}`} 
+                        poem={poem} 
+                        type="poem" 
+                        pageNumber={(index * 2) + 2} 
+                        onSnap={handleSnap} 
+                        isSnapped={snappedIds.includes(String(poem.id))}
+                    />
                 ])
             ) : ([
                    <Page key="empty-meta" type="title" poem={{}} pageNumber="" />, 
